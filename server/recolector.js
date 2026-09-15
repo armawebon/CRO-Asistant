@@ -6,7 +6,7 @@
  * metadatos de commits). No emite juicios: solo hechos.
  *
  * El análisis de esas observaciones lo realiza el modelo (ver analisis.js).
- * Separar ambas fases es lo que permite que los hallazgos citen evidencia real
+ * Separar ambas fases es lo que permite que la evidencia citada sea real
  * en lugar de depender de lo que el modelo recuerde o invente.
  */
 'use strict';
@@ -264,8 +264,10 @@ async function ultimoCommitDeFichero(raiz, ruta) {
  */
 async function recolectar(repo, config) {
   const inicio = Date.now();
-  const rama = config.rama || 'main';
-  const profundidad = config.profundidad === 'superficial' ? 1 : Number(process.env.CRO_PROFUNDIDAD || 80);
+  // Sin apartado de alcance: se analiza la rama por defecto del repositorio
+  // salvo que la configuración indique una explícitamente.
+  const rama = config.rama || '';
+  const profundidad = Number(process.env.CRO_PROFUNDIDAD || 80);
   const temporal = await fs.mkdtemp(path.join(os.tmpdir(), 'cro-'));
   const destino = path.join(temporal, 'repo');
 
@@ -278,7 +280,7 @@ async function recolectar(repo, config) {
     repo,
     url,
     clonado: false,
-    ramaAnalizada: rama,
+    ramaAnalizada: rama || '(rama por defecto)',
     error: null,
     metricas: { ficherosAnalizados: 0, commitsRevisados: 0, duracionMs: 0, ultimoCommit: null },
     observaciones: []
@@ -297,12 +299,13 @@ async function recolectar(repo, config) {
     try {
       await ejecutar('git', argumentos, { timeout: LIMITES.timeoutCloneMs });
     } catch (error) {
+      if (!rama) throw error;
       // Reintento sin fijar rama: el repositorio puede usar otra rama por defecto.
       const sinRama = argumentos.filter((a, i) => a !== '--branch' && argumentos[i - 1] !== '--branch');
       await ejecutar('git', sinRama, { timeout: LIMITES.timeoutCloneMs });
-      resultado.ramaAnalizada = (await ejecutar('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: destino })).trim();
     }
     resultado.clonado = true;
+    resultado.ramaAnalizada = (await ejecutar('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: destino })).trim();
 
     const ficheros = await listarFicheros(destino);
     const git = await metadatosGit(destino, resultado.ramaAnalizada);

@@ -74,15 +74,20 @@
       });
   }
 
-  function analizarRepo(repo, config, control, checksActivos) {
+  function analizarRepo(repo, config, requisito) {
     return fetch('/api/analizar-repo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         repo: repo,
         config: Object.assign({}, config, { repos: undefined }),
-        control: { id: control.id, nombre: control.nombre, marco: control.marco, checks: control.checks },
-        checks: checksActivos
+        requisito: {
+          id: requisito.id,
+          enunciado: requisito.enunciado,
+          objetivo: requisito.objetivo,
+          explicacion: requisito.explicacion,
+          criterios: requisito.criterios
+        }
       })
     }).then(function (r) {
       return r.json().then(function (datos) {
@@ -102,12 +107,8 @@
    * `onProgreso(indice, total, repo)` permite reutilizar el indicador de avance.
    */
   function ejecutar(config, onProgreso) {
-    var control = CRO.catalog.porId(config.controlId);
-    if (!control) return Promise.reject(new Error('Control no encontrado: ' + config.controlId));
-
-    var checksActivos = config.checks && config.checks.length
-      ? config.checks
-      : control.checks.map(function (c) { return c.id; });
+    var requisito = CRO.catalog.porId(config.requisitoId);
+    if (!requisito) return Promise.reject(new Error('Requisito no encontrado: ' + config.requisitoId));
 
     var repos = config.repos.slice();
     var resultados = [];
@@ -118,8 +119,7 @@
       if (indice >= repos.length) {
         return Promise.resolve(CRO.engine.componerEjecucion({
           config: config,
-          control: control,
-          checksActivos: checksActivos,
+          requisito: requisito,
           resultados: resultados,
           inicio: inicio,
           modo: 'real',
@@ -130,14 +130,14 @@
       var repo = repos[indice];
       if (onProgreso) onProgreso(indice, repos.length, repo);
 
-      return analizarRepo(repo, config, control, checksActivos)
+      return analizarRepo(repo, config, requisito)
         .then(function (bloque) {
           if (bloque.analisis && bloque.analisis.modelo) modeloUsado = bloque.analisis.modelo;
           resultados.push(CRO.engine.componerResultadoRepo({
             repo: repo,
-            hallazgos: bloque.hallazgos || [],
-            checksActivos: checksActivos,
-            control: control,
+            criterios: bloque.criterios || [],
+            evidencias: bloque.evidencias || [],
+            explicacion: bloque.explicacion || '',
             metricas: bloque.metricas || {},
             error: bloque.error || null,
             observaciones: bloque.observaciones || [],
@@ -150,9 +150,8 @@
           // queda registrado como error de ese repositorio.
           resultados.push(CRO.engine.componerResultadoRepo({
             repo: repo,
-            hallazgos: [],
-            checksActivos: checksActivos,
-            control: control,
+            criterios: [],
+            evidencias: [],
             metricas: {},
             error: error.message + (error.detalle && error.detalle.cuerpo
               ? ' — ' + String(error.detalle.cuerpo).slice(0, 300) : '')

@@ -1,489 +1,348 @@
 /*
- * catalog.js — Catálogo MOCK de controles de ciberseguridad sobre repositorios Git.
+ * catalog.js — Catálogo de requisitos de control.
  *
- * Cada control define:
- *   - metadatos (marco de referencia, objetivo sugerido)
- *   - checks: verificaciones concretas que compondrán el plan de ejecución
- *   - evidencia: campos de evidencia recomendados para ese control
- *   - plantillas: hallazgos simulados que el motor mock puede materializar
+ * Cada requisito define:
+ *   - enunciado ............ el texto del requisito (lo que hay que cumplir)
+ *   - objetivo ............. qué hay que demostrar con la evidencia
+ *   - explicacion .......... qué evidencia concreta se espera aportar
+ *   - criterios ............ criterios de aceptación con los que se evalúa
+ *   - evidenciaPorDefecto .. descriptivo editable de la forma de la evidencia
+ *   - desplegable .......... si aparece en el desplegable por defecto
  *
- * Todo el contenido es ficticio y sirve únicamente para prototipar la interfaz.
+ * Los campos `enunciado`, `objetivo` y `explicacion` proceden del catálogo de
+ * control. Los campos `criterios` y `evidenciaPorDefecto` son PROPUESTOS por la
+ * aplicación y están pendientes de validación por el equipo de control.
  */
 (function (global) {
   'use strict';
 
   var CRO = (global.CRO = global.CRO || {});
 
-  var SEVERIDADES = {
-    critica: { etiqueta: 'Crítica', peso: 25, orden: 5 },
-    alta: { etiqueta: 'Alta', peso: 15, orden: 4 },
-    media: { etiqueta: 'Media', peso: 8, orden: 3 },
-    baja: { etiqueta: 'Baja', peso: 3, orden: 2 },
-    info: { etiqueta: 'Informativa', peso: 1, orden: 1 }
-  };
-
-  var CAMPOS_EVIDENCIA = [
-    { id: 'ubicacion', etiqueta: 'Ruta y línea del hallazgo', defecto: true },
-    { id: 'commit', etiqueta: 'Commit, autor y fecha', defecto: true },
-    { id: 'snippet', etiqueta: 'Fragmento de código / extracto', defecto: true },
-    { id: 'impacto', etiqueta: 'Impacto potencial', defecto: true },
-    { id: 'recomendacion', etiqueta: 'Recomendación de remediación', defecto: true },
-    { id: 'referencia', etiqueta: 'Referencia normativa (CWE / OWASP / ISO)', defecto: true },
-    { id: 'cvss', etiqueta: 'Puntuación CVSS estimada', defecto: false },
-    { id: 'trazabilidad', etiqueta: 'Identificador de trazabilidad para auditoría', defecto: false }
-  ];
-
-  var FORMATOS_EVIDENCIA = [
-    { id: 'markdown', etiqueta: 'Informe Markdown' },
-    { id: 'json', etiqueta: 'JSON estructurado' },
-    { id: 'csv', etiqueta: 'CSV para hoja de cálculo' },
-    { id: 'ejecutivo', etiqueta: 'Resumen ejecutivo (tabla)' }
-  ];
-
-  var controles = [
+  var requisitos = [
     {
-      id: 'CTRL-SEC-001',
-      nombre: 'Exposición de secretos y credenciales',
-      marco: 'OWASP ASVS V2 · NIST SSDF PW.4 · ISO 27001 A.8.24',
-      descripcion:
-        'Verifica que el repositorio y su histórico no contengan credenciales, tokens, claves privadas ' +
-        'ni material criptográfico en claro.',
-      objetivoSugerido:
-        'Comprobar que no existan secretos en claro en el código ni en el histórico de commits, y que ' +
-        'los que existieron estén revocados y rotados.',
-      promptSugerido:
-        'Analiza el histórico completo de la rama principal buscando credenciales, tokens de API, claves ' +
-        'privadas y cadenas de conexión. Para cada coincidencia indica el fichero, la línea, el commit que ' +
-        'la introdujo y si el secreto sigue siendo válido. Descarta ejemplos evidentes de documentación y ' +
-        'ficheros de test, indicando por qué se descartan. Entrega la evidencia con el secreto enmascarado ' +
-        '(solo 4 primeros caracteres) y una recomendación de rotación priorizada.',
-      checks: [
-        { id: 'SEC-001.1', nombre: 'Secretos en el árbol de trabajo actual' },
-        { id: 'SEC-001.2', nombre: 'Secretos en el histórico de commits' },
-        { id: 'SEC-001.3', nombre: 'Ficheros .env y de configuración versionados' },
-        { id: 'SEC-001.4', nombre: 'Claves privadas y certificados en el repositorio' }
+      id: 'R.006',
+      desplegable: true,
+      enunciado: 'Utilizar únicamente los datos estrictamente necesarios para el propósito del proyecto y aplicar técnicas de cifrado sobre los datos personales utilizados.',
+      objetivo: 'Demostrar que solo se tratan los datos estrictamente necesarios para la finalidad del caso de uso y que los datos personales empleados están cifrados.',
+      explicacion: 'Tabla con los campos de datos utilizados indicando finalidad, origen y justificación de necesidad, señalando también los campos descartados por no ser necesarios. Además, aportar capturas de configuración que evidencien el cifrado de esos datos, mostrando algoritmo y longitud de clave en reposo y TLS 1.2+ en tránsito, con nombre del recurso, entorno y fecha visibles.',
+      criterios: [
+        'Cada dato personal tratado aparece en la tabla con finalidad, origen y justificación de necesidad; no hay campos sin justificar.',
+        'Se identifican explícitamente los campos descartados por no ser necesarios y el motivo del descarte.',
+        'El cifrado en reposo emplea un algoritmo aprobado (AES-256 o equivalente) y el tránsito usa TLS 1.2 o superior, con recurso, entorno y fecha visibles en la evidencia.'
       ],
-      plantillas: [
-        {
-          titulo: 'Token de API en claro dentro del código fuente',
-          severidad: 'critica',
-          check: 'SEC-001.1',
-          archivos: ['src/config/api-client.js', 'app/services/payments.py', 'internal/client/http.go'],
-          snippet: 'const API_TOKEN = "sk_live_9f2c****************************";',
-          impacto: 'Un atacante con acceso de lectura al repositorio podría operar contra el proveedor externo suplantando a la organización.',
-          recomendacion: 'Revocar y rotar el token, moverlo a un gestor de secretos e inyectarlo por variable de entorno en despliegue.',
-          referencia: 'CWE-798 · OWASP ASVS 2.10.4',
-          cvss: 9.1
-        },
-        {
-          titulo: 'Fichero .env con credenciales de base de datos versionado',
-          severidad: 'alta',
-          check: 'SEC-001.3',
-          archivos: ['.env', 'config/.env.production', 'deploy/.env.staging'],
-          snippet: 'DATABASE_URL=postgres://admin:P4ss****@db.interno.local:5432/core',
-          impacto: 'Exposición de credenciales de acceso directo a la base de datos de producción.',
-          recomendacion: 'Eliminar el fichero del control de versiones, añadirlo a .gitignore y purgar el histórico con git filter-repo.',
-          referencia: 'CWE-540 · ISO 27001 A.8.24',
-          cvss: 8.2
-        },
-        {
-          titulo: 'Clave privada RSA presente en el histórico de commits',
-          severidad: 'critica',
-          check: 'SEC-001.2',
-          archivos: ['deploy/keys/id_rsa', 'infra/ssh/deploy_key', 'ops/certs/server.key'],
-          snippet: '-----BEGIN RSA PRIVATE KEY-----\nMIIEow****************************',
-          impacto: 'Permite acceso SSH no autorizado a los servidores de despliegue aunque el fichero ya no esté en HEAD.',
-          recomendacion: 'Revocar la clave en todos los hosts, generar un nuevo par y reescribir el histórico del repositorio.',
-          referencia: 'CWE-321 · NIST SSDF PW.4.1',
-          cvss: 9.4
-        },
-        {
-          titulo: 'Cadena de conexión con contraseña en fichero de pruebas',
-          severidad: 'media',
-          check: 'SEC-001.1',
-          archivos: ['tests/integration/setup.js', 'tests/fixtures/config.yaml'],
-          snippet: 'mongodb://ci_user:ci_p4ss****@mongo-test:27017/fixtures',
-          impacto: 'Credenciales de entorno de pruebas reutilizables si comparten política con otros entornos.',
-          recomendacion: 'Sustituir por credenciales efímeras generadas en tiempo de ejecución por el pipeline de CI.',
-          referencia: 'CWE-259 · OWASP ASVS 2.10.1',
-          cvss: 5.3
-        },
-        {
-          titulo: 'Token de webhook en documentación interna',
-          severidad: 'baja',
-          check: 'SEC-001.1',
-          archivos: ['docs/integraciones.md', 'README.md'],
-          snippet: 'curl -H "X-Hook-Token: whk_3a91****" https://api.interno/hooks',
-          impacto: 'Riesgo limitado, pero facilita el reconocimiento de la superficie de integración.',
-          recomendacion: 'Sustituir por un marcador genérico del tipo <TOKEN> en la documentación.',
-          referencia: 'CWE-532',
-          cvss: 3.1
-        }
-      ]
+      evidenciaPorDefecto: 'Tabla de campos de datos (nombre, finalidad, origen, justificación, tratamiento) más el listado de campos descartados. Adjuntar capturas de la configuración de cifrado en reposo y en tránsito con recurso, entorno y fecha visibles.'
     },
     {
-      id: 'CTRL-SEC-002',
-      nombre: 'Vulnerabilidades en dependencias (SCA)',
-      marco: 'OWASP Top 10 A06:2021 · NIST SSDF PW.3 · ISO 27001 A.8.8',
-      descripcion:
-        'Evalúa las dependencias declaradas y transitivas en busca de vulnerabilidades conocidas y de ' +
-        'versiones sin soporte.',
-      objetivoSugerido:
-        'Identificar dependencias con CVE conocidas de severidad alta o crítica y verificar la existencia ' +
-        'de un proceso de actualización documentado.',
-      promptSugerido:
-        'Revisa los manifiestos de dependencias y sus ficheros de bloqueo. Para cada dependencia vulnerable ' +
-        'indica versión instalada, versión corregida, CVE, vector de explotación y si la ruta vulnerable es ' +
-        'alcanzable desde el código de la aplicación. Prioriza por explotabilidad real, no solo por CVSS, y ' +
-        'entrega un plan de actualización en tres olas: inmediata, 30 días y siguiente release.',
-      checks: [
-        { id: 'SEC-002.1', nombre: 'CVE conocidas en dependencias directas' },
-        { id: 'SEC-002.2', nombre: 'CVE conocidas en dependencias transitivas' },
-        { id: 'SEC-002.3', nombre: 'Ficheros de bloqueo (lockfile) presentes y coherentes' },
-        { id: 'SEC-002.4', nombre: 'Dependencias sin mantenimiento o fuera de soporte' }
+      id: 'R.009',
+      desplegable: true,
+      enunciado: 'Establecer control para que el gestor no pregunte a la IA sobre otros clientes no presentes en la llamada.',
+      objetivo: 'Evidenciar que la IA solo puede responder sobre el cliente asociado a la llamada en curso.',
+      explicacion: 'Captura de la configuración del guardarraíl o filtro de contexto donde se vea que las consultas quedan acotadas al identificador de cliente de la sesión.',
+      criterios: [
+        'La configuración acota toda consulta al identificador de cliente de la sesión en curso.',
+        'El filtro se aplica en el servidor y no depende únicamente de las instrucciones del prompt de sistema.',
+        'Existe al menos una prueba en la que una consulta sobre otro cliente se deniega o devuelve resultado vacío, con su registro en el log.'
       ],
-      plantillas: [
-        {
-          titulo: 'Dependencia directa con vulnerabilidad crítica de ejecución remota',
-          severidad: 'critica',
-          check: 'SEC-002.1',
-          archivos: ['package.json', 'requirements.txt', 'pom.xml'],
-          snippet: '"serialize-lib": "^2.4.1"   → corregido en 2.6.0 (CVE-2024-MOCK-1188)',
-          impacto: 'Deserialización insegura alcanzable desde un endpoint público de la aplicación.',
-          recomendacion: 'Actualizar a la versión parcheada y validar con la batería de pruebas de regresión.',
-          referencia: 'CWE-502 · OWASP A06:2021',
-          cvss: 9.8
-        },
-        {
-          titulo: 'Vulnerabilidad de denegación de servicio en dependencia transitiva',
-          severidad: 'alta',
-          check: 'SEC-002.2',
-          archivos: ['package-lock.json', 'poetry.lock', 'go.sum'],
-          snippet: 'parser-core 1.2.3 (vía http-toolkit@4.0.0) → corregido en 1.2.9',
-          impacto: 'Entradas manipuladas pueden agotar CPU del servicio de ingesta.',
-          recomendacion: 'Forzar resolución a la versión corregida mediante overrides del gestor de paquetes.',
-          referencia: 'CWE-400',
-          cvss: 7.5
-        },
-        {
-          titulo: 'Ausencia de fichero de bloqueo de dependencias',
-          severidad: 'media',
-          check: 'SEC-002.3',
-          archivos: ['package.json', 'requirements.txt'],
-          snippet: 'No se encuentra package-lock.json ni yarn.lock en la raíz del repositorio.',
-          impacto: 'Builds no reproducibles y exposición a ataques de sustitución de dependencias.',
-          recomendacion: 'Generar y versionar el lockfile; habilitar instalación en modo estricto en CI.',
-          referencia: 'NIST SSDF PW.3.1',
-          cvss: 5.9
-        },
-        {
-          titulo: 'Librería sin mantenimiento desde hace más de 36 meses',
-          severidad: 'media',
-          check: 'SEC-002.4',
-          archivos: ['package.json', 'build.gradle'],
-          snippet: 'legacy-xml-utils 0.9.4 — último release hace 41 meses, repositorio archivado.',
-          impacto: 'Sin canal de parcheo ante futuras vulnerabilidades.',
-          recomendacion: 'Planificar sustitución por una alternativa mantenida o asumir el mantenimiento internamente.',
-          referencia: 'ISO 27001 A.8.8',
-          cvss: 4.3
-        },
-        {
-          titulo: 'Dependencia con licencia incompatible con la política interna',
-          severidad: 'baja',
-          check: 'SEC-002.1',
-          archivos: ['package.json', 'go.mod'],
-          snippet: 'strong-copyleft-lib 3.1.0 — licencia AGPL-3.0',
-          impacto: 'Riesgo legal en distribución del producto.',
-          recomendacion: 'Validar con el área legal o sustituir por una alternativa con licencia permisiva.',
-          referencia: 'ISO 27001 A.5.32',
-          cvss: 2.5
-        }
-      ]
+      evidenciaPorDefecto: 'Captura de la configuración del filtro de contexto y traza de una prueba con dos clientes en la que se vea la denegación al consultar por el cliente no asociado a la llamada.'
     },
     {
-      id: 'CTRL-SEC-003',
-      nombre: 'Gobierno del repositorio y protección de ramas',
-      marco: 'NIST SSDF PO.3 · SLSA Nivel 2 · ISO 27001 A.8.4',
-      descripcion:
-        'Comprueba que existan reglas de protección de rama, revisión obligatoria por pares y firma de ' +
-        'commits en las ramas productivas.',
-      objetivoSugerido:
-        'Verificar que ningún cambio llegue a la rama productiva sin revisión aprobada, comprobaciones de ' +
-        'CI superadas y trazabilidad del autor.',
-      promptSugerido:
-        'Evalúa la configuración de gobierno del repositorio: protección de la rama principal, número de ' +
-        'aprobaciones requeridas, prohibición de push forzado, firma de commits y propietarios de código. ' +
-        'Contrasta la configuración declarada con el comportamiento real observado en los últimos 100 ' +
-        'commits y señala toda excepción. La evidencia debe incluir la configuración detectada y al menos ' +
-        'un ejemplo real de incumplimiento cuando exista.',
-      checks: [
-        { id: 'SEC-003.1', nombre: 'Protección de la rama principal activa' },
-        { id: 'SEC-003.2', nombre: 'Revisión por pares obligatoria antes de la fusión' },
-        { id: 'SEC-003.3', nombre: 'Firma de commits verificada' },
-        { id: 'SEC-003.4', nombre: 'Fichero CODEOWNERS definido y vigente' }
+      id: 'R.010',
+      desplegable: true,
+      enunciado: 'Evitar que la transcripción de la IA almacene en claro datos identificativos, financieros o de acceso del cliente.',
+      objetivo: 'Demostrar que las transcripciones generadas por la IA no almacenan en claro datos identificativos, financieros ni credenciales del cliente.',
+      explicacion: 'Captura de las reglas de redacción o masking activas (patrones de DNI/NIE, IBAN, PAN, teléfono, credenciales) y muestra real de una transcripción almacenada donde se vean los valores enmascarados, indicando el sistema de almacenamiento, el entorno y la fecha de la captura.',
+      criterios: [
+        'Las reglas de enmascarado cubren, como mínimo, DNI/NIE, IBAN, PAN, teléfono y credenciales.',
+        'La muestra de transcripción almacenada presenta esos valores enmascarados, no solo enmascarados en la visualización.',
+        'La evidencia identifica el sistema de almacenamiento, el entorno y la fecha de la captura.'
       ],
-      plantillas: [
-        {
-          titulo: 'Rama principal sin reglas de protección',
-          severidad: 'alta',
-          check: 'SEC-003.1',
-          archivos: ['.github/settings.yml', '(configuración del servidor Git)'],
-          snippet: 'branch_protection: { main: null } — se permiten push directos y forzados.',
-          impacto: 'Un único usuario comprometido puede introducir código en producción sin revisión.',
-          recomendacion: 'Activar protección de rama con revisión obligatoria y bloqueo de push forzado.',
-          referencia: 'NIST SSDF PO.3.2 · SLSA L2',
-          cvss: 7.4
-        },
-        {
-          titulo: 'Fusiones sin aprobación registrada en los últimos 90 días',
-          severidad: 'media',
-          check: 'SEC-003.2',
-          archivos: ['(histórico de pull requests)'],
-          snippet: '7 de 42 fusiones a main sin revisión aprobada por un segundo usuario.',
-          impacto: 'Se rompe el principio de segregación de funciones en el flujo de cambios.',
-          recomendacion: 'Exigir al menos una aprobación y bloquear la autoaprobación del autor.',
-          referencia: 'ISO 27001 A.8.32',
-          cvss: 5.4
-        },
-        {
-          titulo: 'Commits sin firma verificada en rama productiva',
-          severidad: 'media',
-          check: 'SEC-003.3',
-          archivos: ['(histórico de commits)'],
-          snippet: '63 % de los commits de main carecen de firma GPG/SSH verificada.',
-          impacto: 'No se puede acreditar la autoría de los cambios ante una investigación.',
-          recomendacion: 'Exigir commits firmados y distribuir claves de firma mediante la gestión de identidades.',
-          referencia: 'SLSA L2 · NIST SSDF PS.2',
-          cvss: 4.8
-        },
-        {
-          titulo: 'CODEOWNERS ausente para directorios sensibles',
-          severidad: 'baja',
-          check: 'SEC-003.4',
-          archivos: ['.github/CODEOWNERS'],
-          snippet: 'No hay propietarios asignados para /infra ni para /src/auth.',
-          impacto: 'Cambios en componentes críticos pueden revisarse por perfiles sin contexto de seguridad.',
-          recomendacion: 'Definir CODEOWNERS con el equipo de seguridad como revisor obligatorio de esas rutas.',
-          referencia: 'NIST SSDF PO.2.1',
-          cvss: 3.4
-        }
-      ]
+      evidenciaPorDefecto: 'Captura de la configuración de las reglas de redacción con sus patrones y muestra real de una transcripción almacenada con los valores enmascarados, indicando almacenamiento, entorno y fecha.'
     },
     {
-      id: 'CTRL-SEC-004',
-      nombre: 'Seguridad de la cadena de CI/CD',
-      marco: 'SLSA Nivel 3 · OWASP Top 10 CI/CD · NIST SSDF PO.5',
-      descripcion:
-        'Analiza los flujos de integración y despliegue continuo en busca de permisos excesivos, acciones ' +
-        'no fijadas y ejecución de código no confiable.',
-      objetivoSugerido:
-        'Asegurar que los pipelines no puedan ser utilizados para exfiltrar secretos ni para introducir ' +
-        'artefactos no autorizados en producción.',
-      promptSugerido:
-        'Revisa las definiciones de pipeline del repositorio. Busca acciones o imágenes referenciadas por ' +
-        'etiqueta móvil en lugar de por hash, permisos de token amplios, ejecución de código procedente de ' +
-        'forks y uso de secretos en pasos que ejecutan entradas no confiables. Entrega por cada hallazgo el ' +
-        'fichero de workflow, el trabajo y el paso concreto, además del escenario de abuso paso a paso.',
-      checks: [
-        { id: 'SEC-004.1', nombre: 'Acciones y contenedores fijados por hash' },
-        { id: 'SEC-004.2', nombre: 'Permisos mínimos del token del pipeline' },
-        { id: 'SEC-004.3', nombre: 'Ejecución de código de fuentes no confiables' },
-        { id: 'SEC-004.4', nombre: 'Gestión de secretos en el pipeline' }
+      id: 'R.013',
+      desplegable: true,
+      enunciado: 'Restricción acceso a información de clientes marcados con la etiqueta de confidencialidad.',
+      objetivo: 'Evidenciar que el sistema impide el acceso y el tratamiento mediante IA de la información de clientes etiquetados como confidenciales.',
+      explicacion: 'Captura de la regla o filtro que comprueba la marca de confidencialidad antes de recuperar los datos y prueba de extremo a extremo con un cliente marcado en la que se vea la denegación de acceso.',
+      criterios: [
+        'La comprobación de la marca de confidencialidad ocurre antes de recuperar los datos, no después.',
+        'La prueba de extremo a extremo con un cliente marcado muestra denegación efectiva, sin filtrado parcial de información.',
+        'La denegación queda registrada en el log con identificador de sesión y motivo.'
       ],
-      plantillas: [
-        {
-          titulo: 'Acción de terceros referenciada por etiqueta móvil',
-          severidad: 'alta',
-          check: 'SEC-004.1',
-          archivos: ['.github/workflows/ci.yml', '.gitlab-ci.yml', '.github/workflows/release.yml'],
-          snippet: 'uses: vendor-externo/deploy-action@v3   # etiqueta mutable, no fijada por SHA',
-          impacto: 'El mantenedor de la acción o quien la comprometa puede ejecutar código arbitrario con acceso a los secretos del pipeline.',
-          recomendacion: 'Fijar la acción a un SHA completo y revisar periódicamente las actualizaciones.',
-          referencia: 'SLSA L3 · CICD-SEC-4',
-          cvss: 8.1
-        },
-        {
-          titulo: 'Token del pipeline con permisos de escritura globales',
-          severidad: 'alta',
-          check: 'SEC-004.2',
-          archivos: ['.github/workflows/ci.yml'],
-          snippet: 'permissions: write-all',
-          impacto: 'Cualquier paso comprometido podría modificar el repositorio o publicar releases.',
-          recomendacion: 'Declarar permisos mínimos por trabajo (contents: read) y elevar solo donde sea imprescindible.',
-          referencia: 'CICD-SEC-5 · NIST SSDF PO.5.1',
-          cvss: 7.6
-        },
-        {
-          titulo: 'Workflow con disparador pull_request_target y checkout del fork',
-          severidad: 'critica',
-          check: 'SEC-004.3',
-          archivos: ['.github/workflows/pr-checks.yml'],
-          snippet: 'on: pull_request_target\n  steps:\n    - uses: actions/checkout@v4\n      with: { ref: ${{ github.event.pull_request.head.sha }} }',
-          impacto: 'Permite a un contribuidor externo ejecutar código con acceso a los secretos del repositorio.',
-          recomendacion: 'Separar el pipeline de validación no confiable del pipeline con secretos y exigir aprobación manual.',
-          referencia: 'CICD-SEC-4 · CWE-829',
-          cvss: 9.3
-        },
-        {
-          titulo: 'Secreto expuesto en la salida de registro del pipeline',
-          severidad: 'media',
-          check: 'SEC-004.4',
-          archivos: ['.github/workflows/deploy.yml', 'ci/scripts/publish.sh'],
-          snippet: 'echo "Desplegando con clave ${DEPLOY_KEY}"',
-          impacto: 'El valor del secreto queda registrado en artefactos de ejecución accesibles al equipo.',
-          recomendacion: 'Eliminar la traza, registrar únicamente identificadores y activar el enmascarado de secretos.',
-          referencia: 'CWE-532 · CICD-SEC-6',
-          cvss: 6.5
-        }
-      ]
+      evidenciaPorDefecto: 'Captura de la regla de acceso que evalúa la etiqueta de confidencialidad y traza completa de una prueba extremo a extremo con un cliente marcado, incluyendo el registro de la denegación.'
     },
     {
-      id: 'CTRL-SEC-005',
-      nombre: 'Configuración insegura de infraestructura como código',
-      marco: 'CIS Benchmarks · NIST SP 800-53 CM-6 · ISO 27001 A.8.9',
-      descripcion:
-        'Revisa manifiestos de infraestructura como código en busca de configuraciones que expongan ' +
-        'servicios o debiliten los controles de acceso.',
-      objetivoSugerido:
-        'Detectar recursos definidos como código que se desplegarían con acceso público, cifrado ' +
-        'desactivado o privilegios excesivos.',
-      promptSugerido:
-        'Analiza los manifiestos de infraestructura como código del repositorio. Para cada recurso ' +
-        'inseguro indica el fichero, el bloque de recurso, el valor actual y el valor esperado según el ' +
-        'estándar interno. Diferencia entre entornos (desarrollo, preproducción, producción) y prioriza ' +
-        'producción. Entrega la evidencia incluyendo el fragmento del manifiesto y el comando de ' +
-        'verificación que permitiría reproducir el hallazgo.',
-      checks: [
-        { id: 'SEC-005.1', nombre: 'Recursos expuestos a redes públicas' },
-        { id: 'SEC-005.2', nombre: 'Cifrado en reposo y en tránsito' },
-        { id: 'SEC-005.3', nombre: 'Privilegios de contenedores y cargas de trabajo' },
-        { id: 'SEC-005.4', nombre: 'Registro y auditoría habilitados' }
+      id: 'R.014',
+      desplegable: true,
+      enunciado: 'Restricción acceso a información de clientes marcados con la etiqueta de derecho de supresión.',
+      objetivo: 'Evidenciar que la información de clientes que han ejercido el derecho de supresión no es accesible ni utilizable por el sistema de IA.',
+      explicacion: 'Captura de la regla o filtro que excluye a los clientes con marca de supresión y prueba con un caso marcado mostrando la denegación.',
+      criterios: [
+        'El filtro excluye a los clientes con marca de supresión en todas las vías de acceso, incluidas cachés e índices de búsqueda.',
+        'La prueba con un caso marcado muestra que ni se recupera ni se utiliza la información en la respuesta del modelo.',
+        'La exclusión es verificable en el código o la configuración, no solo en la interfaz de usuario.'
       ],
-      plantillas: [
-        {
-          titulo: 'Grupo de seguridad abierto a 0.0.0.0/0 en puerto administrativo',
-          severidad: 'critica',
-          check: 'SEC-005.1',
-          archivos: ['infra/terraform/network.tf', 'deploy/aws/security-groups.tf'],
-          snippet: 'ingress { from_port = 22, to_port = 22, cidr_blocks = ["0.0.0.0/0"] }',
-          impacto: 'Exposición del acceso administrativo a toda Internet.',
-          recomendacion: 'Restringir a rangos corporativos o sustituir por acceso mediante bastión con autenticación fuerte.',
-          referencia: 'CIS AWS 5.2 · CWE-284',
-          cvss: 9.0
-        },
-        {
-          titulo: 'Almacenamiento de objetos sin cifrado en reposo',
-          severidad: 'alta',
-          check: 'SEC-005.2',
-          archivos: ['infra/terraform/storage.tf', 'infra/pulumi/buckets.ts'],
-          snippet: 'resource "bucket" "datos" { encryption = false }',
-          impacto: 'Datos sensibles almacenados sin cifrado gestionado.',
-          recomendacion: 'Activar cifrado con clave gestionada por la organización y política de rotación.',
-          referencia: 'NIST SP 800-53 SC-28',
-          cvss: 7.1
-        },
-        {
-          titulo: 'Contenedor ejecutándose como root con privilegios elevados',
-          severidad: 'alta',
-          check: 'SEC-005.3',
-          archivos: ['k8s/deployment.yaml', 'Dockerfile', 'helm/values.yaml'],
-          snippet: 'securityContext:\n  privileged: true\n  runAsUser: 0',
-          impacto: 'Un compromiso del contenedor permitiría escapar al nodo anfitrión.',
-          recomendacion: 'Ejecutar con usuario sin privilegios, deshabilitar privileged y aplicar perfiles seccomp.',
-          referencia: 'CIS Kubernetes 5.2.5 · CWE-250',
-          cvss: 8.4
-        },
-        {
-          titulo: 'Registros de auditoría deshabilitados en el plano de control',
-          severidad: 'media',
-          check: 'SEC-005.4',
-          archivos: ['infra/terraform/logging.tf'],
-          snippet: 'audit_logs { enabled = false }',
-          impacto: 'Imposibilidad de investigar incidentes con trazas fiables.',
-          recomendacion: 'Habilitar auditoría con retención mínima de 12 meses y envío al SIEM corporativo.',
-          referencia: 'ISO 27001 A.8.15',
-          cvss: 5.3
-        }
-      ]
+      evidenciaPorDefecto: 'Captura del filtro de supresión en la capa de acceso a datos y prueba con un cliente marcado mostrando la denegación, indicando qué ocurre además con cachés e índices.'
     },
     {
-      id: 'CTRL-SEC-006',
-      nombre: 'Patrones inseguros en el código fuente (SAST)',
-      marco: 'OWASP Top 10 · CWE Top 25 · NIST SSDF PW.7',
-      descripcion:
-        'Búsqueda de patrones de código que habitualmente derivan en vulnerabilidades explotables.',
-      objetivoSugerido:
-        'Identificar inyecciones, validación de entrada insuficiente y uso de primitivas criptográficas ' +
-        'obsoletas en el código de la aplicación.',
-      promptSugerido:
-        'Realiza un análisis estático orientado a flujo de datos: identifica fuentes de entrada no ' +
-        'confiable y sigue su recorrido hasta los sumideros sensibles (consultas, comandos del sistema, ' +
-        'plantillas, deserialización). Para cada hallazgo entrega la traza fuente → sumidero, el fichero y ' +
-        'la línea de ambos extremos, y una prueba de concepto no destructiva. Marca explícitamente los ' +
-        'falsos positivos descartados y el motivo.',
-      checks: [
-        { id: 'SEC-006.1', nombre: 'Inyección en consultas y comandos' },
-        { id: 'SEC-006.2', nombre: 'Validación y saneamiento de entradas' },
-        { id: 'SEC-006.3', nombre: 'Uso de criptografía obsoleta o insegura' },
-        { id: 'SEC-006.4', nombre: 'Gestión de errores y fuga de información' }
+      id: 'R.015',
+      desplegable: true,
+      enunciado: 'Informar al usuario sobre la grabación de la llamada y la finalidad de su tratamiento mediante IA.',
+      objetivo: 'Acreditar que se informa al usuario, antes del tratamiento, de que la llamada se graba y de que será analizada mediante IA.',
+      explicacion: 'Documento con el texto literal de la locución o aviso previo.',
+      criterios: [
+        'El texto informa expresamente de la grabación y del análisis mediante IA, no solo de la grabación.',
+        'El aviso se emite antes de que comience el tratamiento, y así se refleja en el flujo de la llamada.',
+        'El documento aportado recoge el texto literal vigente, con versión o fecha de entrada en vigor.'
       ],
-      plantillas: [
-        {
-          titulo: 'Consulta SQL construida por concatenación de entrada de usuario',
-          severidad: 'critica',
-          check: 'SEC-006.1',
-          archivos: ['src/repositories/user-repository.js', 'app/dao/orders.py', 'internal/store/query.go'],
-          snippet: 'db.query("SELECT * FROM usuarios WHERE email = \'" + req.query.email + "\'")',
-          impacto: 'Permite extraer o modificar datos arbitrarios de la base de datos.',
-          recomendacion: 'Usar consultas parametrizadas o el ORM con enlazado de parámetros.',
-          referencia: 'CWE-89 · OWASP A03:2021',
-          cvss: 9.8
-        },
-        {
-          titulo: 'Ejecución de comando del sistema con entrada no saneada',
-          severidad: 'alta',
-          check: 'SEC-006.1',
-          archivos: ['src/utils/convert.js', 'scripts/process.py'],
-          snippet: 'exec("ffmpeg -i " + nombreArchivoUsuario + " salida.mp4")',
-          impacto: 'Ejecución remota de comandos en el servidor de procesamiento.',
-          recomendacion: 'Invocar el binario con lista de argumentos y validar el nombre contra una lista blanca.',
-          referencia: 'CWE-78',
-          cvss: 8.8
-        },
-        {
-          titulo: 'Uso de algoritmo de hash obsoleto para contraseñas',
-          severidad: 'alta',
-          check: 'SEC-006.3',
-          archivos: ['src/auth/password.js', 'app/security/hashing.py'],
-          snippet: 'const hash = crypto.createHash("md5").update(password).digest("hex");',
-          impacto: 'Las contraseñas pueden recuperarse con ataques de diccionario acelerados por GPU.',
-          recomendacion: 'Migrar a Argon2id o bcrypt con parámetros de coste revisados anualmente.',
-          referencia: 'CWE-327 · OWASP ASVS 2.4.1',
-          cvss: 7.5
-        },
-        {
-          titulo: 'Traza de excepción devuelta al cliente en respuesta de error',
-          severidad: 'media',
-          check: 'SEC-006.4',
-          archivos: ['src/middleware/error-handler.js', 'app/api/handlers.py'],
-          snippet: 'res.status(500).json({ error: err.stack });',
-          impacto: 'Revela rutas internas, versiones y estructura del sistema a un atacante.',
-          recomendacion: 'Devolver un identificador de error y registrar el detalle únicamente en el sistema de trazas.',
-          referencia: 'CWE-209',
-          cvss: 5.3
-        },
-        {
-          titulo: 'Validación de entrada ausente en parámetro de paginación',
-          severidad: 'baja',
-          check: 'SEC-006.2',
-          archivos: ['src/controllers/list-controller.js'],
-          snippet: 'const limite = req.query.limit; // sin límite máximo ni conversión segura',
-          impacto: 'Permite solicitudes que degradan el rendimiento del servicio.',
-          recomendacion: 'Validar el rango permitido y aplicar un máximo por defecto.',
-          referencia: 'CWE-20',
-          cvss: 3.7
-        }
-      ]
+      evidenciaPorDefecto: 'Documento con el texto literal de la locución vigente, su versión o fecha, y el punto del flujo de llamada en el que se reproduce.'
+    },
+    {
+      id: 'R.026',
+      desplegable: true,
+      enunciado: 'Utilizar librerías homologadas.',
+      objetivo: 'Evidenciar que solo se emplean componentes aprobados internamente, evitando dependencias no gobernadas o de origen no confiable.',
+      explicacion: 'Export del fichero de dependencias del proyecto (requirements.txt, pom.xml, package-lock.json o equivalente) con nombre y versión exacta de cada librería, junto a una tabla de contraste con el catálogo homologado indicando el estado de cada una (homologada, pendiente o excepción aprobada) y la evidencia de aprobación de las excepciones.',
+      criterios: [
+        'El export de dependencias incluye nombre y versión exacta de cada componente, incluidas las transitivas.',
+        'Toda dependencia figura en la tabla de contraste con estado homologada, pendiente o excepción aprobada; no hay componentes sin clasificar.',
+        'Cada excepción cuenta con evidencia de aprobación identificable (aprobador y fecha).'
+      ],
+      evidenciaPorDefecto: 'Export del fichero de dependencias con versiones exactas y tabla de contraste frente al catálogo homologado, añadiendo la evidencia de aprobación de cada excepción.'
+    },
+    {
+      id: 'R.027',
+      desplegable: true,
+      enunciado: 'Registrar todas las acciones del sistema (logs).',
+      objetivo: 'Demostrar que el sistema registra las acciones ejecutadas, permitiendo su posterior auditoría y trazabilidad.',
+      explicacion: 'Captura de la configuración de logging (nivel, destinos y retención) y muestra real de logs anonimizados donde se aprecien los campos mínimos: marca de tiempo, identificador de usuario y de sesión, acción ejecutada, resultado y origen. Indicar la plataforma en la que se centralizan los registros.',
+      criterios: [
+        'La muestra de logs contiene los campos mínimos: marca de tiempo, identificador de usuario y de sesión, acción, resultado y origen.',
+        'La configuración declara nivel, destinos y periodo de retención, y este último cumple la política interna.',
+        'Se identifica la plataforma de centralización y los registros no contienen datos personales en claro.'
+      ],
+      evidenciaPorDefecto: 'Captura de la configuración de logging (nivel, destinos, retención) y muestra de logs anonimizados con los campos mínimos, indicando la plataforma de centralización.'
+    },
+    {
+      id: 'R.029',
+      desplegable: true,
+      enunciado: 'Implementar autenticación en la plataforma para validar la identidad del usuario antes de permitir la interacción con la IA.',
+      objetivo: 'Acreditar que ningún usuario puede interactuar con el sistema de IA sin haberse autenticado previamente.',
+      explicacion: 'Captura de la configuración de autenticación (integración con el proveedor de identidad corporativo, protocolo OIDC o SAML).',
+      criterios: [
+        'La autenticación se integra con el proveedor de identidad corporativo mediante OIDC o SAML.',
+        'No existe ninguna vía de acceso a la funcionalidad de IA que omita la autenticación, incluidos endpoints de API.',
+        'La validación de la sesión se realiza en el servidor en cada petición, no solo al iniciar sesión.'
+      ],
+      evidenciaPorDefecto: 'Captura de la configuración de autenticación con el proveedor de identidad y prueba de que una petición sin sesión válida es rechazada en el servidor.'
+    },
+    {
+      id: 'R.031',
+      desplegable: true,
+      enunciado: 'Prevenir que los usuarios modifiquen de forma maliciosa el comportamiento del sistema de IA (jailbreak) mediante filtros y validaciones en las entradas que bloqueen prompts o instrucciones destinados a eludir los controles.',
+      objetivo: 'Impedir que un usuario manipule el comportamiento del modelo mediante prompts diseñados para eludir las instrucciones y controles definidos.',
+      explicacion: 'Captura de la configuración del filtro o guardarraíl de entrada (motor utilizado, conjunto de patrones o clasificador y acción ante detección: bloquear, sanear o escalar).',
+      criterios: [
+        'La configuración identifica el motor de filtrado, el conjunto de patrones o clasificador y la acción ante detección.',
+        'El filtro actúa antes de que la entrada llegue al modelo y su resultado queda registrado.',
+        'Se aportan pruebas con intentos de elusión representativos mostrando el bloqueo o saneado efectivo.'
+      ],
+      evidenciaPorDefecto: 'Captura de la configuración del guardarraíl de entrada (motor, patrones y acción) junto con pruebas de intentos de elusión representativos y su registro en el log.'
+    },
+    {
+      id: 'R.032',
+      desplegable: false,
+      enunciado: 'Fijar versiones explícitas y reproducibles de las dependencias, revisándolas en cada despliegue.',
+      objetivo: 'Demostrar que las versiones de las dependencias son explícitas y reproducibles, y que se revisan en cada despliegue para detectar componentes vulnerables.',
+      explicacion: 'Fichero de bloqueo del gestor de paquetes (requirements.txt con versiones fijas, package-lock.json, poetry.lock o equivalente), tanto en captura como en su contenido, junto con la salida del paso de la canalización CI/CD que verifica dependencias en cada despliegue, con fecha y resultado.',
+      criterios: [
+        'Existe fichero de bloqueo versionado y todas las dependencias tienen versión fija, sin rangos abiertos.',
+        'La canalización CI/CD ejecuta la verificación de dependencias en cada despliegue y su salida se conserva con fecha y resultado.',
+        'El despliegue falla o se bloquea cuando se detectan componentes vulnerables por encima del umbral definido.'
+      ],
+      evidenciaPorDefecto: 'Fichero de bloqueo con versiones fijas y salida del paso de CI/CD que verifica dependencias, con fecha, resultado y umbral de bloqueo aplicado.'
+    },
+    {
+      id: 'R.034',
+      desplegable: false,
+      enunciado: 'Conectar el modelo con herramientas mediante un protocolo estandarizado y controlado.',
+      objetivo: 'Demostrar que la conexión del modelo con múltiples herramientas se realiza mediante un protocolo estandarizado y controlado, con inventario de herramientas y permisos acotados.',
+      explicacion: 'Captura de la configuración del servidor MCP con el listado de herramientas registradas, los permisos y ámbitos concedidos a cada una, el método de autenticación empleado y el diagrama de integración.',
+      criterios: [
+        'El inventario recoge todas las herramientas registradas con su ámbito y permisos concedidos.',
+        'Los permisos son los mínimos necesarios para cada herramienta y no hay ámbitos comodín.',
+        'La autenticación entre el modelo y las herramientas está declarada y no emplea credenciales compartidas.'
+      ],
+      evidenciaPorDefecto: 'Captura de la configuración del servidor de herramientas con su inventario, permisos y método de autenticación, acompañada del diagrama de integración.'
+    },
+    {
+      id: 'R.035',
+      desplegable: false,
+      enunciado: 'Verificar mediante controles técnicos la identidad de la persona a la que se ofrece el producto o servicio.',
+      objetivo: 'Evidenciar que la identidad de la persona a la que se ofrece el producto o servicio se verifica mediante controles técnicos antes de la operación.',
+      explicacion: 'Descripción del método de verificación de identidad utilizado (factores y nivel de garantía).',
+      criterios: [
+        'El método de verificación está descrito con sus factores y su nivel de garantía.',
+        'La verificación ocurre antes de la operación y su resultado condiciona la continuación del flujo.',
+        'El resultado de la verificación queda registrado y es auditable.'
+      ],
+      evidenciaPorDefecto: 'Descripción del método de verificación de identidad con factores y nivel de garantía, y traza del punto del flujo en el que se aplica.'
+    },
+    {
+      id: 'R.037',
+      desplegable: false,
+      enunciado: 'Documentar y someter a aprobación de CRO las instrucciones y restricciones del prompt de sistema.',
+      objetivo: 'Acreditar que las instrucciones y restricciones del prompt de sistema existen, están documentadas y han sido revisadas y aprobadas por CRO.',
+      explicacion: 'Documento con el prompt de sistema y sus guardarraíles, captura de la configuración desplegada y evidencia formal de la validación por el equipo CRO: acta, correo de aprobación o firma con fecha y alcance revisado.',
+      criterios: [
+        'El prompt de sistema documentado coincide con el desplegado en el entorno productivo.',
+        'La aprobación de CRO es formal e identifica fecha, aprobador y alcance revisado.',
+        'Existe control de versiones del prompt que permite saber qué versión estaba vigente en cada momento.'
+      ],
+      evidenciaPorDefecto: 'Documento del prompt de sistema con sus guardarraíles, captura de la configuración desplegada y evidencia formal de aprobación por CRO con fecha y alcance.'
+    },
+    {
+      id: 'R.038',
+      desplegable: false,
+      enunciado: 'Disponer de un punto de control que inspeccione y filtre entradas y salidas antes de llegar al modelo.',
+      objetivo: 'Demostrar que existe un punto de control que inspecciona y filtra las entradas y salidas entre el usuario y la aplicación antes de llegar al modelo.',
+      explicacion: 'Diagrama de arquitectura señalando la ubicación del guardarraíl en el flujo, captura de su configuración y capturas de pruebas mostrando el bloqueo de una entrada y de una salida no permitidas, con su registro en el log.',
+      criterios: [
+        'El diagrama sitúa el guardarraíl en el flujo de forma que no puede eludirse llamando directamente al modelo.',
+        'Se aportan pruebas de bloqueo tanto de una entrada como de una salida no permitidas.',
+        'Ambos bloqueos quedan registrados en el log con identificador de sesión y motivo.'
+      ],
+      evidenciaPorDefecto: 'Diagrama de arquitectura con la ubicación del guardarraíl, captura de su configuración y pruebas de bloqueo de entrada y de salida con su registro.'
+    },
+    {
+      id: 'R.062',
+      desplegable: false,
+      enunciado: 'Desplegar únicamente los componentes esenciales, reduciendo la superficie de ataque.',
+      objetivo: 'Demostrar que el sistema se despliega únicamente con los componentes esenciales, reduciendo la superficie de ataque.',
+      explicacion: 'Inventario de servicios, módulos y funciones activos en el entorno productivo con su justificación.',
+      criterios: [
+        'El inventario cubre todos los servicios, módulos y funciones activos en producción.',
+        'Cada elemento activo tiene justificación funcional; no hay componentes de desarrollo o depuración habilitados.',
+        'El inventario está fechado y corresponde al despliegue vigente.'
+      ],
+      evidenciaPorDefecto: 'Inventario fechado de servicios, módulos y funciones activos en producción con la justificación de cada uno y mención expresa de lo deshabilitado.'
+    },
+    {
+      id: 'R.085',
+      desplegable: false,
+      enunciado: 'Exponer únicamente el comportamiento de la librería que la aplicación necesita realmente.',
+      objetivo: 'Reducir la superficie de ataque exponiendo únicamente el comportamiento de la librería que la aplicación necesita realmente.',
+      explicacion: 'Fragmento de código o diagrama que muestre la capa envolvente (wrapper o fachada) sobre la librería, indicando qué métodos se exponen y cuáles quedan encapsulados.',
+      criterios: [
+        'Existe una capa envolvente y la aplicación no invoca la librería directamente fuera de ella.',
+        'Se identifica qué métodos se exponen y cuáles quedan encapsulados.',
+        'La superficie expuesta se corresponde con necesidades funcionales reales y documentadas.'
+      ],
+      evidenciaPorDefecto: 'Fragmento de código de la capa envolvente y diagrama o listado de los métodos expuestos frente a los encapsulados.'
+    },
+    {
+      id: 'R.087',
+      desplegable: false,
+      enunciado: 'Realizar operaciones sobre ficheros, procesos y red mediante APIs seguras y no comandos del sistema.',
+      objetivo: 'Garantizar que las operaciones sobre ficheros, procesos y red se realizan mediante APIs seguras del lenguaje o plataforma y no invocando comandos del sistema.',
+      explicacion: 'Fragmentos de código o resultado del análisis estático que acrediten el uso de APIs nativas para estas operaciones, junto con la evidencia de la ausencia de llamadas del tipo exec, system o shell con parámetros procedentes de la entrada de usuario.',
+      criterios: [
+        'Las operaciones sobre ficheros, procesos y red se realizan mediante APIs nativas del lenguaje o plataforma.',
+        'El análisis estático no detecta llamadas a exec, system o shell con parámetros procedentes de entrada de usuario.',
+        'Las excepciones justificadas, si existen, están documentadas y saneadas mediante lista blanca.'
+      ],
+      evidenciaPorDefecto: 'Fragmentos de código representativos y salida del análisis estático que acrediten el uso de APIs nativas y la ausencia de invocación de comandos del sistema con entrada de usuario.'
+    },
+    {
+      id: 'R.091',
+      desplegable: false,
+      enunciado: 'Impedir que datos no confiables sean interpretados como parte de una sentencia SQL.',
+      objetivo: 'Impedir que datos no confiables sean interpretados como parte de una sentencia SQL, previniendo la inyección SQL.',
+      explicacion: 'Fragmentos de código representativos donde se aprecie el uso de sentencias preparadas con parámetros vinculados (nunca concatenación de cadenas).',
+      criterios: [
+        'Todas las consultas con datos de entrada emplean sentencias preparadas con parámetros vinculados.',
+        'No se encuentra concatenación ni interpolación de cadenas en la construcción de consultas.',
+        'Los nombres de tabla o columna dinámicos, si existen, se resuelven mediante lista blanca.'
+      ],
+      evidenciaPorDefecto: 'Fragmentos de código de la capa de acceso a datos con sentencias preparadas y parámetros vinculados, incluyendo el tratamiento de cualquier parte dinámica de la consulta.'
+    },
+    {
+      id: 'R.092',
+      desplegable: false,
+      enunciado: 'Validar los datos de entrada y codificar los de salida, neutralizando metacaracteres.',
+      objetivo: 'Garantizar que los datos que entran se validan y que los que salen se codifican, neutralizando metacaracteres que puedan alterar el significado de una consulta o de una respuesta.',
+      explicacion: 'Fragmentos de código con las funciones de validación de entrada (listas blancas, tipos y longitudes) y de codificación de salida según el contexto (HTML, JS, SQL o URL), junto con pruebas que envíen metacaracteres típicos y muestren que se tratan como datos literales y no como código.',
+      criterios: [
+        'La validación de entrada se basa en listas blancas con tipo y longitud definidos.',
+        'La codificación de salida se aplica según el contexto de destino (HTML, JS, SQL o URL).',
+        'Las pruebas con metacaracteres típicos muestran que se tratan como datos literales.'
+      ],
+      evidenciaPorDefecto: 'Fragmentos de código de validación de entrada y de codificación de salida por contexto, acompañados de pruebas con metacaracteres representativos y su resultado.'
+    },
+    {
+      id: 'R.093',
+      desplegable: false,
+      enunciado: 'Garantizar que cada variable empleada en consultas tiene un tipo definido y verificado.',
+      objetivo: 'Reducir el riesgo de inyección y de errores de conversión garantizando que cada variable tiene un tipo definido y verificado.',
+      explicacion: 'Fragmentos de código con la declaración tipada de las variables empleadas en las consultas, junto con el resultado del análisis estático o del verificador de tipos sin errores, y una prueba que rechace una entrada de tipo no esperado.',
+      criterios: [
+        'Las variables empleadas en consultas están declaradas con tipo explícito.',
+        'El verificador de tipos o el análisis estático se ejecuta sin errores sobre el código aportado.',
+        'Existe una prueba que rechaza una entrada de tipo no esperado con un error controlado.'
+      ],
+      evidenciaPorDefecto: 'Fragmentos de código con declaración tipada, salida del verificador de tipos sin errores y prueba que rechaza una entrada de tipo no esperado.'
+    },
+    {
+      id: 'R.098',
+      desplegable: false,
+      enunciado: 'Evitar el agotamiento del pool de conexiones y reducir la ventana de exposición de sesiones abiertas.',
+      objetivo: 'Evitar el agotamiento del pool de conexiones y reducir la ventana de exposición de sesiones abiertas.',
+      explicacion: 'Fragmentos de código donde se aprecie el cierre determinista de la conexión (bloques try-with-resources, using o context manager) y la configuración del pool con sus tiempos máximos de vida e inactividad, junto con una captura de monitorización que muestre que no existen conexiones huérfanas o inactivas persistentes.',
+      criterios: [
+        'El cierre de la conexión es determinista en todas las rutas de ejecución, incluidas las de error.',
+        'La configuración del pool declara tiempo máximo de vida y de inactividad.',
+        'La monitorización aportada no muestra conexiones huérfanas ni inactivas persistentes.'
+      ],
+      evidenciaPorDefecto: 'Fragmentos de código con cierre determinista de conexiones, configuración del pool con sus tiempos y captura de monitorización del estado de las conexiones.'
+    },
+    {
+      id: 'R.114',
+      desplegable: false,
+      enunciado: 'Aplicar las comprobaciones de tipo en el servidor y no solo en el cliente.',
+      objetivo: 'Garantizar que las comprobaciones de tipo se aplican en el servidor y no solo en el cliente, donde pueden eludirse.',
+      explicacion: 'Fragmentos de código o captura de la configuración de validación en el servidor con las restricciones aplicadas (rangos numéricos, valores enumerados permitidos y tipos MIME admitidos).',
+      criterios: [
+        'La validación se ejecuta en el servidor para todos los parámetros de entrada.',
+        'Las restricciones incluyen rangos numéricos, valores enumerados permitidos y tipos MIME admitidos cuando aplique.',
+        'Una petición que elude el cliente y envía valores fuera de rango es rechazada por el servidor.'
+      ],
+      evidenciaPorDefecto: 'Fragmentos de código o configuración de validación en servidor con sus restricciones, y prueba de una petición directa que elude el cliente y resulta rechazada.'
+    },
+    {
+      id: 'R.151',
+      desplegable: false,
+      enunciado: 'Impedir el acceso transversal a datos de otros inquilinos o de niveles de confidencialidad superiores.',
+      objetivo: 'Impedir el acceso transversal a datos de otros inquilinos o de niveles de confidencialidad superiores mediante consultas manipuladas.',
+      explicacion: 'Fragmentos de código o captura de la capa de acceso a datos donde se aprecie la inyección obligatoria de los filtros de seguridad (identificador de inquilino, etiquetas de confidencialidad y ámbito de usuario) en toda consulta.',
+      criterios: [
+        'Los filtros de seguridad se inyectan de forma obligatoria en la capa de acceso a datos y no dependen de cada consulta concreta.',
+        'Los filtros cubren identificador de inquilino, etiquetas de confidencialidad y ámbito de usuario.',
+        'Existe una prueba de acceso transversal manipulado que resulta denegada.'
+      ],
+      evidenciaPorDefecto: 'Fragmentos de código de la capa de acceso a datos con la inyección obligatoria de filtros de seguridad y prueba de un intento de acceso transversal denegado.'
+    },
+    {
+      id: 'R.152',
+      desplegable: false,
+      enunciado: 'Evitar que un fallo en la evaluación de autorización derive en un acceso indebido.',
+      objetivo: 'Evitar que un fallo en la evaluación de autorización derive en un acceso indebido en nombre de otro usuario.',
+      explicacion: 'Fragmento de código o captura del manejo de errores mostrando la cancelación inmediata de la consulta y la devolución de un código de error de autorización explícito.',
+      criterios: [
+        'Ante un fallo en la evaluación de autorización, la operación se cancela de inmediato sin continuar la consulta.',
+        'Se devuelve un código de error de autorización explícito, sin revertir a un comportamiento permisivo por defecto.',
+        'El fallo queda registrado con identificador de usuario, sesión y recurso solicitado.'
+      ],
+      evidenciaPorDefecto: 'Fragmento de código del manejo de errores de autorización mostrando la cancelación inmediata, el código de error devuelto y su registro.'
     }
   ];
 
@@ -497,16 +356,21 @@
   ];
 
   CRO.catalog = {
-    severidades: SEVERIDADES,
-    camposEvidencia: CAMPOS_EVIDENCIA,
-    formatosEvidencia: FORMATOS_EVIDENCIA,
-    controles: controles,
+    requisitos: requisitos,
     autores: autores,
+    veredictos: {
+      conforme: 'Conforme',
+      'no-conforme': 'No conforme',
+      'no-evaluable': 'No evaluable'
+    },
     porId: function (id) {
-      for (var i = 0; i < controles.length; i++) {
-        if (controles[i].id === id) return controles[i];
+      for (var i = 0; i < requisitos.length; i++) {
+        if (requisitos[i].id === id) return requisitos[i];
       }
       return null;
+    },
+    desplegables: function (todos) {
+      return todos ? requisitos : requisitos.filter(function (r) { return r.desplegable; });
     }
   };
 })(window);

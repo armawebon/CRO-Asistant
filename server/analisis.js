@@ -1,60 +1,64 @@
 /*
  * analisis.js — Traduce la solicitud del usuario a una consulta al modelo GLM y
- * convierte su respuesta en el contrato de datos que ya consume la interfaz.
+ * convierte su respuesta en el contrato de datos que consume la interfaz.
+ *
+ * El modelo evalúa un requisito de control sobre un repositorio: valora cada
+ * criterio de aceptación y aporta la evidencia que lo sustenta.
  *
  * Reglas de integridad aplicadas aquí:
- *  - El modelo solo puede fundamentar un hallazgo citando una observación real
- *    recogida por el recolector (OBS-nnn), o declarándolo explícitamente como
- *    hallazgo por ausencia.
- *  - La ruta, la línea y el commit de cada hallazgo NO se toman del texto del
- *    modelo: se resuelven desde la observación citada. Así no puede inventarlos.
- *  - Todo hallazgo que cite una observación inexistente queda marcado como no
- *    verificado en lugar de presentarse como evidencia.
+ *  - Cada evidencia debe citar una observación real recogida del repositorio
+ *    (OBS-nnn), o declararse explícitamente como evidencia por ausencia.
+ *  - La ruta, la línea y el commit NO se toman del texto del modelo: se
+ *    resuelven desde la observación citada, de modo que no puede inventarlos.
+ *  - Una evidencia que cite una observación inexistente queda marcada como no
+ *    verificable en lugar de presentarse como prueba.
+ *  - El veredicto no lo dicta el modelo: lo deriva la aplicación de la
+ *    evaluación de los criterios (basta un criterio incumplido).
  */
 'use strict';
 
 const zai = require('./zai');
 
-const SEVERIDADES = ['critica', 'alta', 'media', 'baja', 'info'];
+const RESULTADOS = ['cumple', 'no cumple', 'no evaluable'];
 
 /* ------------------------------------------------------------------- prompts */
 
-const SISTEMA = `Eres un analista de seguridad ofensiva y defensiva especializado en auditoría de repositorios de código.
+const SISTEMA = `Eres un auditor de seguridad especializado en verificar requisitos de control sobre repositorios de código.
 
 Trabajas sobre OBSERVACIONES recogidas automáticamente de un clon real del repositorio. No tienes acceso al repositorio: las observaciones son tu única fuente de verdad.
 
+Tu tarea es evaluar UN requisito de control valorando, uno a uno, sus criterios de aceptación.
+
 Reglas de obligado cumplimiento:
-1. Todo hallazgo debe citar el identificador de la observación que lo sustenta (campo "observacion": "OBS-nnn").
-2. Si el hallazgo consiste en la AUSENCIA de un control y no hay observación que lo respalde, usa "observacion": null y "tipo": "ausencia".
-3. No inventes rutas, líneas, commits ni contenidos que no aparezcan en las observaciones. Esos datos se rellenan automáticamente desde la observación citada; no los repitas.
-4. Descarta las coincidencias que sean claramente ejemplos de documentación, datos de prueba o marcadores de posición, y decláralas en "descartados" explicando por qué.
-5. Si las observaciones no permiten pronunciarse sobre una verificación, decláralo en "limitaciones" en lugar de suponer.
-6. Ajusta la severidad a la explotabilidad real evidenciada, no a la gravedad teórica del tipo de fallo.
+1. Valora cada criterio con exactamente uno de estos resultados: "cumple", "no cumple" o "no evaluable".
+2. Usa "no evaluable" cuando las observaciones no permitan pronunciarte. No supongas ni des por bueno lo que no puedas ver: un criterio sin evidencia es "no evaluable", nunca "cumple".
+3. Toda evidencia que aportes debe citar el identificador de la observación que la sustenta (campo "observacion": "OBS-nnn").
+4. Si la evidencia consiste en la AUSENCIA de algo, usa "observacion": null y "tipo": "ausencia".
+5. No inventes rutas, líneas, commits ni contenidos que no aparezcan en las observaciones. Esos datos se rellenan automáticamente desde la observación citada; no los repitas.
+6. Recuerda que buena parte de estos requisitos se acreditan con documentación, configuración de plataforma o capturas que NO están en el repositorio. Cuando sea así, dilo en "limitaciones" y valora el criterio como "no evaluable" en lugar de forzar una conclusión.
+7. La explicación debe ser breve y concreta: qué falta o qué se ha desviado.
 
 Respondes SIEMPRE con un único objeto JSON válido, sin texto adicional ni marcas de formato.`;
 
 function esquemaSalida() {
   return `{
-  "hallazgos": [
+  "criterios": [
     {
-      "titulo": "string, enunciado concreto del problema",
-      "severidad": "critica | alta | media | baja | info",
-      "check": "identificador de la verificación del control a la que responde",
-      "observacion": "OBS-nnn o null",
-      "tipo": "evidencia | ausencia",
-      "impacto": "string, qué permite hacer a un atacante en este repositorio concreto",
-      "recomendacion": "string, acción de remediación concreta",
-      "referencia": "string, CWE / OWASP / ISO aplicable",
-      "cvss": number entre 0 y 10,
-      "confianza": "Alta | Media | Baja",
-      "justificacion": "string, por qué la observación citada sustenta este hallazgo"
+      "indice": number, el número del criterio tal como se te presenta,
+      "resultado": "cumple | no cumple | no evaluable",
+      "justificacion": "string, una o dos frases explicando la valoración"
     }
   ],
-  "descartados": [
-    { "observacion": "OBS-nnn", "motivo": "string" }
+  "evidencias": [
+    {
+      "observacion": "OBS-nnn o null",
+      "tipo": "evidencia | ausencia",
+      "descripcion": "string, qué acredita esta evidencia respecto al requisito",
+      "cumple": true si respalda el cumplimiento, false si evidencia una desviación
+    }
   ],
-  "limitaciones": ["string"],
-  "valoracionGlobal": "string, dos o tres frases sobre el estado del repositorio respecto al objetivo del control"
+  "explicacion": "string, breve, obligatoria si algún criterio no se cumple o no es evaluable",
+  "limitaciones": ["string, qué no se ha podido verificar con el repositorio y dónde estaría esa evidencia"]
 }`;
 }
 
@@ -86,52 +90,42 @@ function resumirObservaciones(observaciones) {
   }).join('\n\n');
 }
 
-function construirMensajeUsuario(config, control, checksActivos, recoleccion) {
-  const checks = control.checks.filter((c) => checksActivos.includes(c.id));
-  const campos = config.camposEvidencia || [];
-
+function construirMensajeUsuario(config, requisito, recoleccion) {
   const bloques = [];
+
   bloques.push('## Repositorio analizado');
   bloques.push(`- URL: ${recoleccion.url}`);
   bloques.push(`- Rama analizada: ${recoleccion.ramaAnalizada}`);
   bloques.push(`- Ficheros recorridos: ${recoleccion.metricas.ficherosAnalizados}`);
   bloques.push(`- Commits disponibles en el clon: ${recoleccion.metricas.commitsRevisados}`);
-  bloques.push(`- Profundidad solicitada: ${config.profundidad === 'superficial' ? 'solo estado actual (HEAD)' : 'histórico'}`);
   bloques.push('');
 
-  bloques.push('## Control a ejecutar');
-  bloques.push(`- ${control.id} — ${control.nombre}`);
-  bloques.push(`- Marco de referencia: ${control.marco}`);
+  bloques.push('## Requisito a evaluar');
+  bloques.push(`- ${requisito.id}: ${requisito.enunciado}`);
   bloques.push('');
 
-  bloques.push('## Objetivo declarado por el solicitante');
-  bloques.push(config.objetivo || '(no declarado)');
+  bloques.push('## Objetivo de la evidencia');
+  bloques.push(requisito.objetivo || '(no declarado)');
   bloques.push('');
 
-  bloques.push('## Verificaciones a cubrir');
-  checks.forEach((c) => bloques.push(`- ${c.id}: ${c.nombre}`));
-  bloques.push('');
-  bloques.push('El campo "check" de cada hallazgo debe ser uno de: ' + checks.map((c) => c.id).join(', '));
+  bloques.push('## Explicación de la evidencia esperada por el catálogo');
+  bloques.push(requisito.explicacion || '(no declarada)');
   bloques.push('');
 
-  bloques.push('## Enfoque de la prueba solicitado');
-  bloques.push(config.prompt || '(no declarado)');
+  bloques.push('## Forma de la evidencia solicitada por el solicitante');
+  bloques.push(config.evidenciaEsperada || '(no declarada)');
   bloques.push('');
 
-  bloques.push('## Evidencia esperada');
-  bloques.push('El solicitante requiere que cada hallazgo permita documentar: ' +
-    (campos.length ? campos.join(', ') : 'ubicación e impacto') + '.');
-  if (config.criterioAceptacion) {
-    bloques.push(`Criterio de aceptación del control: ${config.criterioAceptacion}`);
-  }
+  bloques.push('## Criterios de aceptación a valorar');
+  (requisito.criterios || []).forEach((c, i) => bloques.push(`${i + 1}. ${c}`));
+  bloques.push('');
+  bloques.push('Devuelve una entrada por cada criterio, usando su número como "indice".');
   bloques.push('');
 
   bloques.push('## Observaciones recogidas del repositorio');
-  if (!recoleccion.observaciones.length) {
-    bloques.push('(no se recogió ninguna observación)');
-  } else {
-    bloques.push(resumirObservaciones(recoleccion.observaciones));
-  }
+  bloques.push(recoleccion.observaciones.length
+    ? resumirObservaciones(recoleccion.observaciones)
+    : '(no se recogió ninguna observación)');
   bloques.push('');
 
   bloques.push('## Formato de respuesta');
@@ -168,90 +162,100 @@ function extraerJson(texto) {
   return null;
 }
 
-function normalizarSeveridad(valor) {
+function normalizarResultado(valor) {
   const v = String(valor || '').toLowerCase().trim();
   const equivalencias = {
-    critical: 'critica', crítica: 'critica', critica: 'critica',
-    high: 'alta', alta: 'alta',
-    medium: 'media', media: 'media', moderate: 'media',
-    low: 'baja', baja: 'baja',
-    informational: 'info', info: 'info', informativa: 'info'
+    'cumple': 'cumple', 'pass': 'cumple', 'conforme': 'cumple', 'cumplido': 'cumple',
+    'no cumple': 'no cumple', 'fail': 'no cumple', 'incumple': 'no cumple', 'no conforme': 'no cumple',
+    'no evaluable': 'no evaluable', 'n/a': 'no evaluable', 'sin evidencia': 'no evaluable',
+    'no aplicable': 'no evaluable', 'indeterminado': 'no evaluable'
   };
-  return equivalencias[v] || (SEVERIDADES.includes(v) ? v : 'media');
+  // Un resultado no reconocido nunca se interpreta como cumplimiento.
+  return equivalencias[v] || (RESULTADOS.includes(v) ? v : 'no evaluable');
 }
 
-function idHallazgo(repoId, titulo, indice) {
+function idEvidencia(semilla, indice) {
   let h = 2166136261 >>> 0;
-  const cadena = `${repoId}|${titulo}|${indice}`;
+  const cadena = `${semilla}|${indice}`;
   for (let i = 0; i < cadena.length; i++) {
     h ^= cadena.charCodeAt(i);
     h = Math.imul(h, 16777619) >>> 0;
   }
-  return 'H-' + String(h % 100000).padStart(5, '0');
+  return 'EV-' + String(h % 100000).padStart(5, '0');
 }
 
 /**
- * Convierte la respuesta del modelo en hallazgos con evidencia resuelta desde
- * las observaciones reales.
+ * Alinea la valoración del modelo con los criterios del requisito.
+ * Un criterio que el modelo no valore queda como "no evaluable".
  */
-function materializarHallazgos(bruto, recoleccion, control, checksActivos) {
+function materializarCriterios(bruto, requisito) {
+  const porIndice = new Map();
+  (Array.isArray(bruto.criterios) ? bruto.criterios : []).forEach((c) => {
+    const indice = Number(c.indice);
+    if (Number.isInteger(indice)) porIndice.set(indice, c);
+  });
+
+  return (requisito.criterios || []).map((texto, i) => {
+    const valoracion = porIndice.get(i + 1);
+    return {
+      indice: i + 1,
+      criterio: texto,
+      resultado: valoracion ? normalizarResultado(valoracion.resultado) : 'no evaluable',
+      justificacion: valoracion
+        ? String(valoracion.justificacion || '').slice(0, 800)
+        : 'El modelo no se pronunció sobre este criterio.'
+    };
+  });
+}
+
+/** Ancla cada evidencia a la observación citada. */
+function materializarEvidencias(bruto, recoleccion) {
   const porId = new Map(recoleccion.observaciones.map((o) => [o.id, o]));
-  const nombreCheck = new Map(control.checks.map((c) => [c.id, c.nombre]));
-  const lista = Array.isArray(bruto.hallazgos) ? bruto.hallazgos : [];
+  const lista = Array.isArray(bruto.evidencias) ? bruto.evidencias : [];
 
-  return lista.map((h, indice) => {
-    const observacion = h.observacion ? porId.get(String(h.observacion).trim().toUpperCase()) : null;
-    const citaInvalida = Boolean(h.observacion) && !observacion;
-    const check = checksActivos.includes(h.check) ? h.check : checksActivos[0];
-
-    // Ubicación y commit se toman de la observación, nunca del texto del modelo.
+  return lista.map((e, indice) => {
+    const clave = e.observacion ? String(e.observacion).trim().toUpperCase() : null;
+    const observacion = clave ? porId.get(clave) : null;
+    const citaInvalida = Boolean(clave) && !observacion;
     const commit = observacion && observacion.commit ? observacion.commit : null;
 
     return {
-      id: idHallazgo(recoleccion.repo.id || recoleccion.url, h.titulo || 'hallazgo', indice),
-      titulo: String(h.titulo || 'Hallazgo sin título').slice(0, 300),
-      severidad: normalizarSeveridad(h.severidad),
-      control: control.id,
-      check,
-      checkNombre: nombreCheck.get(check) || check,
+      id: idEvidencia(recoleccion.repo.id || recoleccion.url, indice),
       repo: recoleccion.repo.etiqueta,
-      archivo: observacion && observacion.ruta ? observacion.ruta : '(sin fichero asociado)',
+      descripcion: String(e.descripcion || 'Evidencia sin descripción').slice(0, 1000),
+      // Ubicación y commit se toman de la observación, nunca del texto del modelo.
+      ruta: observacion && observacion.ruta ? observacion.ruta : '',
       linea: observacion && observacion.linea ? observacion.linea : 0,
       commit: commit ? commit.sha : '',
       commitRelacion: commit ? commit.relacion : '',
       autor: commit ? commit.autor : '',
       fecha: commit ? commit.fecha : '',
-      rama: recoleccion.ramaAnalizada,
-      snippet: observacion
-        ? (observacion.extracto || (observacion.contenido ? observacion.contenido.slice(0, 600) : observacion.descripcion || ''))
-        : '(hallazgo por ausencia de control: no hay fragmento asociado)',
-      impacto: String(h.impacto || '').slice(0, 1200),
-      recomendacion: String(h.recomendacion || '').slice(0, 1200),
-      referencia: String(h.referencia || '').slice(0, 200),
-      cvss: Number.isFinite(Number(h.cvss)) ? Math.min(10, Math.max(0, Number(h.cvss))) : null,
-      estado: 'Abierto',
-      confianza: citaInvalida ? 'Baja' : (['Alta', 'Media', 'Baja'].includes(h.confianza) ? h.confianza : 'Media'),
-      // Trazabilidad del origen de cada dato:
-      origen: observacion ? 'observación ' + observacion.id : (h.tipo === 'ausencia' ? 'ausencia de control' : 'sin observación'),
-      verificado: Boolean(observacion) || h.tipo === 'ausencia',
-      justificacion: String(h.justificacion || '').slice(0, 800),
+      extracto: observacion
+        ? (observacion.extracto || (observacion.contenido ? observacion.contenido.slice(0, 600) : ''))
+        : '',
+      cumple: e.cumple !== false,
+      origen: observacion
+        ? 'observación ' + observacion.id
+        : (e.tipo === 'ausencia' ? 'ausencia constatada en el repositorio' : 'sin observación'),
+      verificado: Boolean(observacion) || e.tipo === 'ausencia',
       advertencia: citaInvalida
-        ? `El modelo citó la observación ${h.observacion}, que no existe en la recolección. Hallazgo no verificado.`
+        ? `El modelo citó la observación ${e.observacion}, que no existe en la recolección. Evidencia no verificable.`
         : null
     };
   });
 }
 
 /**
- * Ejecuta el análisis real de un repositorio: recolección + modelo.
- * Devuelve el bloque de resultado por repositorio que consume la interfaz.
+ * Evalúa un repositorio frente al requisito: recolección + modelo.
+ * Devuelve el bloque por repositorio que consume la interfaz.
  */
-async function analizarRepositorio({ repo, config, control, checksActivos, recoleccion }) {
+async function analizarRepositorio({ repo, config, requisito, recoleccion }) {
   if (!recoleccion.ok) {
     return {
       repo,
       error: recoleccion.error,
-      hallazgos: [],
+      criterios: [],
+      evidencias: [],
       metricas: recoleccion.metricas,
       observaciones: [],
       analisis: null
@@ -260,7 +264,7 @@ async function analizarRepositorio({ repo, config, control, checksActivos, recol
 
   const mensajes = [
     { role: 'system', content: SISTEMA },
-    { role: 'user', content: construirMensajeUsuario(config, control, checksActivos, recoleccion) }
+    { role: 'user', content: construirMensajeUsuario(config, requisito, recoleccion) }
   ];
 
   const respuesta = await zai.chat(mensajes, { jsonEstricto: true, temperatura: 0.15 });
@@ -272,12 +276,12 @@ async function analizarRepositorio({ repo, config, control, checksActivos, recol
     });
   }
 
-  const hallazgos = materializarHallazgos(bruto, recoleccion, control, checksActivos);
-
   return {
     repo,
     error: null,
-    hallazgos,
+    criterios: materializarCriterios(bruto, requisito),
+    evidencias: materializarEvidencias(bruto, recoleccion),
+    explicacion: String(bruto.explicacion || '').slice(0, 2000),
     metricas: {
       ...recoleccion.metricas,
       duracionModeloMs: respuesta.duracionMs,
@@ -288,12 +292,17 @@ async function analizarRepositorio({ repo, config, control, checksActivos, recol
     })),
     analisis: {
       modelo: respuesta.modelo,
-      valoracionGlobal: String(bruto.valoracionGlobal || '').slice(0, 2000),
-      descartados: Array.isArray(bruto.descartados) ? bruto.descartados.slice(0, 50) : [],
       limitaciones: Array.isArray(bruto.limitaciones) ? bruto.limitaciones.slice(0, 20) : [],
       razonFin: respuesta.razonFin
     }
   };
 }
 
-module.exports = { analizarRepositorio, extraerJson, materializarHallazgos, construirMensajeUsuario, SISTEMA };
+module.exports = {
+  analizarRepositorio,
+  extraerJson,
+  materializarCriterios,
+  materializarEvidencias,
+  construirMensajeUsuario,
+  SISTEMA
+};

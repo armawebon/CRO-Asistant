@@ -122,8 +122,10 @@ function leerCuerpo(req, maxBytes = 2 * 1024 * 1024) {
 function validarPeticionAnalisis(cuerpo) {
   if (!cuerpo || typeof cuerpo !== 'object') return 'Petición vacía';
   if (!cuerpo.repo || !cuerpo.repo.etiqueta) return 'Falta el repositorio';
-  if (!cuerpo.control || !Array.isArray(cuerpo.control.checks)) return 'Falta la definición del control';
-  if (!Array.isArray(cuerpo.checks) || !cuerpo.checks.length) return 'No se indicaron verificaciones';
+  if (!cuerpo.requisito || !cuerpo.requisito.id) return 'Falta el requisito a evaluar';
+  if (!Array.isArray(cuerpo.requisito.criterios) || !cuerpo.requisito.criterios.length) {
+    return 'El requisito no trae criterios de aceptación';
+  }
   if (!cuerpo.config) return 'Falta la configuración del control';
   return null;
 }
@@ -139,10 +141,10 @@ async function manejarAnalizarRepo(req, res) {
   const error = validarPeticionAnalisis(cuerpo);
   if (error) return responder(res, 400, { error });
 
-  const { repo, config, control, checks } = cuerpo;
+  const { repo, config, requisito } = cuerpo;
   const clonar = process.env.CRO_CLONAR !== '0';
 
-  registrar(`▶ análisis real: ${repo.etiqueta} · ${control.id}`);
+  registrar(`▶ evaluación real: ${repo.etiqueta} · ${requisito.id}`);
 
   let recoleccion;
   if (clonar) {
@@ -151,7 +153,7 @@ async function manejarAnalizarRepo(req, res) {
   } else {
     recoleccion = {
       ok: true, repo, url: repo.entrada, clonado: false,
-      ramaAnalizada: config.rama || 'main',
+      ramaAnalizada: '(clonado desactivado)',
       metricas: { ficherosAnalizados: 0, commitsRevisados: 0, duracionMs: 0, ultimoCommit: null },
       observaciones: []
     };
@@ -160,15 +162,15 @@ async function manejarAnalizarRepo(req, res) {
   if (!recoleccion.ok) {
     return responder(res, 200, {
       repo, error: `No se pudo clonar el repositorio: ${recoleccion.error}`,
-      hallazgos: [], metricas: recoleccion.metricas, observaciones: [], analisis: null
+      criterios: [], evidencias: [], metricas: recoleccion.metricas, observaciones: [], analisis: null
     });
   }
 
   try {
-    const resultado = await analizarRepositorio({
-      repo, config, control, checksActivos: checks, recoleccion
-    });
-    registrar(`  modelo: ${resultado.analisis ? resultado.analisis.modelo : '—'} · ${resultado.hallazgos.length} hallazgos`);
+    const resultado = await analizarRepositorio({ repo, config, requisito, recoleccion });
+    const incumplidos = resultado.criterios.filter((c) => c.resultado === 'no cumple').length;
+    registrar(`  modelo: ${resultado.analisis ? resultado.analisis.modelo : '—'} · ` +
+      `${resultado.criterios.length} criterios (${incumplidos} incumplidos) · ${resultado.evidencias.length} evidencias`);
     responder(res, 200, resultado);
   } catch (err) {
     registrar(`  ERROR del modelo: ${err.message}`);
