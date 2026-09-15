@@ -1,3 +1,8 @@
+# Secretos: la clave del modelo vive aquí y nunca debe versionarse
+.env
+.env.*
+!.env.example
+
 # Sistema operativo
 .DS_Store
 Thumbs.db

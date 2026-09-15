@@ -1,59 +1,132 @@
 # CRO-Asistant
 
-Aplicación web (HTML + CSS + JavaScript, sin dependencias ni build) para **definir y ejecutar
-controles de ciberseguridad sobre listados de repositorios Git**.
+Aplicación web para **definir y ejecutar controles de ciberseguridad sobre listados de repositorios
+Git**. Funciona en dos modos:
 
-> ⚠️ **Estado actual: MOCK.** La aplicación no clona repositorios, no realiza peticiones de red y
-> no ejecuta ningún análisis real. Todos los hallazgos son ficticios y se generan localmente de
-> forma determinista para prototipar el flujo de trabajo y el formato de la evidencia.
+| Modo | Qué hace | Requiere |
+| --- | --- | --- |
+| **Simulado** | Genera hallazgos ficticios deterministas. No accede a los repositorios ni a la red. | Nada: abrir `index.html` |
+| **Real** | Clona cada repositorio, recoge evidencia verificable y la analiza con el modelo **GLM de Z.AI**. | Servidor local + clave de API |
 
-## Qué permite hacer
+## Qué recibe la aplicación
 
-1. **Listado de repositorios Git.** Se pegan uno por línea; se aceptan `https://host/org/repo.git`,
-   `git@host:org/repo.git` y la forma corta `org/repo`. La aplicación normaliza, deduplica y marca
-   las entradas mal formadas.
-2. **Objetivo del control.** Se elige un control del catálogo (6 controles predefinidos con su marco
-   de referencia: OWASP, NIST SSDF, ISO 27001, CIS, SLSA), se concreta el objetivo de esa ejecución
-   y se seleccionan las verificaciones a ejecutar.
-3. **Prompt de enfoque de la prueba.** Texto libre que describe cómo abordar el análisis. Cada
-   control aporta un prompt sugerido que puede usarse como punto de partida.
-4. **Evidencia esperada.** Formato de entrega (Markdown, JSON, CSV o resumen ejecutivo), campos
-   obligatorios de cada hallazgo (ubicación, commit, fragmento, impacto, recomendación, referencia
-   normativa, CVSS, trazabilidad) y criterio de aceptación del control.
-5. **Ejecución y resultados.** Progreso por repositorio, KPIs, veredicto por repositorio, matriz de
-   estado por verificación, tabla de hallazgos filtrable con evidencia desplegable, y la evidencia
-   final generada en el formato solicitado (copiable y descargable).
+1. **Listado de repositorios Git** — uno por línea. Se aceptan `https://host/org/repo.git`,
+   `git@host:org/repo.git` y la forma corta `org/repo`. Se normalizan, deduplican y se marcan las
+   entradas mal formadas.
+2. **Objetivo del control** — se elige un control del catálogo (6 controles con su marco de
+   referencia: OWASP, NIST SSDF, ISO 27001, CIS, SLSA), se concreta el objetivo de esa ejecución y se
+   seleccionan las verificaciones a ejecutar.
+3. **Prompt de enfoque de la prueba** — cómo abordar el análisis. En modo real **este texto se envía
+   literalmente al modelo** y condiciona su trabajo. Cada control trae un prompt sugerido.
+4. **Evidencia esperada** — formato de entrega (Markdown, JSON, CSV o resumen ejecutivo), campos
+   obligatorios de cada hallazgo y criterio de aceptación del control.
 
-Las ejecuciones y el borrador del formulario se guardan en `localStorage` (máximo 20 ejecuciones).
+## Cómo funciona el modo real
 
-## Cómo ejecutarla
-
-No requiere instalación ni servidor:
-
-```bash
-# Opción 1: abrir directamente
-xdg-open index.html      # macOS: open index.html
-
-# Opción 2: servidor estático (recomendado)
-npx http-server . -p 8080
-# → http://localhost:8080
+```
+Navegador                  Servidor local                        Z.AI
+   │  POST /api/analizar-repo   │                                  │
+   │ ─────────────────────────► │                                  │
+   │                            │ 1. git clone --depth … (real)    │
+   │                            │ 2. recolección de OBSERVACIONES  │
+   │                            │    (patrones, ficheros, git log) │
+   │                            │ 3. objetivo + prompt + evidencia │
+   │                            │    + observaciones ─────────────►│ GLM
+   │                            │ 4. hallazgos JSON ◄──────────────│
+   │                            │ 5. resolución de rutas/commits   │
+   │ ◄───────────────────────── │    desde la observación citada   │
 ```
 
-También puede publicarse tal cual en cualquier hosting estático (GitHub Pages, S3, Nginx).
+La separación entre **recolección** (hechos) y **análisis** (criterio del modelo) es deliberada, y
+sobre ella se aplican tres reglas de integridad:
+
+- **Todo hallazgo debe citar la observación que lo sustenta** (`OBS-nnn`), o declararse
+  explícitamente como hallazgo por ausencia de control.
+- **La ruta, la línea y el commit no se toman del texto del modelo**: se resuelven desde la
+  observación citada. El modelo no puede inventar ubicaciones.
+- **Si el modelo cita una observación inexistente**, el hallazgo se marca como *sin evidencia
+  verificable*, con confianza baja, y se contabiliza aparte en el informe.
+
+El material potencialmente sensible (claves, tokens, URLs con credenciales) se **enmascara en la
+recolección**, antes de salir de la máquina: al modelo le llegan los primeros 4 caracteres.
+
+### Lo que el modo real no es
+
+Es un análisis asistido por modelo sobre evidencia real, **no un escáner de seguridad certificado**.
+La detección se basa en patrones y en el criterio del modelo: habrá falsos positivos y falsos
+negativos. El informe lo indica expresamente y toda conclusión requiere revisión humana antes de
+usarse como resultado de auditoría.
+
+## Puesta en marcha
+
+### Modo simulado
+
+```bash
+xdg-open index.html     # o simplemente abrir el fichero en el navegador
+```
+
+### Modo real
+
+```bash
+cp .env.example .env
+# editar .env y poner ZAI_API_KEY=...
+npm start               # equivale a: node server/server.js
+# → http://127.0.0.1:8080
+```
+
+No hay dependencias que instalar: el servidor usa solo la biblioteca estándar de Node (≥ 18).
+
+En la propia interfaz, el botón **«Comprobar conexión con el modelo»** valida clave, modelo y
+conectividad antes de lanzar ningún análisis, y muestra el error del proveedor tal cual si algo
+falla (por ejemplo, si el identificador de modelo no existe en tu cuenta).
+
+### Variables de entorno
+
+| Variable | Por defecto | Para qué |
+| --- | --- | --- |
+| `ZAI_API_KEY` | — | Clave del API de Z.AI. **Obligatoria** para el modo real. |
+| `ZAI_MODEL` | `glm-5.2` | Identificador del modelo. |
+| `ZAI_BASE_URL` | `https://api.z.ai/api/paas/v4` | Endpoint compatible con OpenAI. Usa `https://open.bigmodel.cn/api/paas/v4` para BigModel. |
+| `PORT` / `HOST` | `8080` / `127.0.0.1` | Escucha del servidor local. |
+| `CRO_CLONAR` | `1` | `0` desactiva el clonado. |
+| `CRO_PROFUNDIDAD` | `80` | Commits a traer en el clon con histórico. |
+| `CRO_MAX_PROMPT` | `120000` | Tope de caracteres del contexto enviado al modelo. |
+
+## Seguridad de la clave
+
+- La clave se lee **solo en el servidor** (`ZAI_API_KEY`). El navegador nunca la recibe: `/api/estado`
+  devuelve únicamente una huella del tipo `74d3…BN03`.
+- `.env` está en `.gitignore`. **No versiones nunca la clave.**
+- Si una clave ha llegado a aparecer en un chat, un ticket, un log o una captura, considérala
+  comprometida y rótala en el panel de Z.AI.
+- El servidor escucha en `127.0.0.1` por defecto. Si lo expones en red, pon autenticación delante:
+  cualquiera que alcance el puerto puede gastar tu cuota del API.
+
+## Sobre el clonado
+
+El recolector clona con `--depth`, `--single-branch` y `--no-tags`, con `core.hooksPath=/dev/null`
+(los hooks del repositorio analizado **no se ejecutan**), sin prompts de credenciales, sin seguir
+enlaces simbólicos y borrando el directorio temporal al terminar. Aun así, clonar código no confiable
+conviene hacerlo en un entorno aislado.
 
 ## Estructura
 
 ```
 index.html                 Estructura de la interfaz
 assets/css/styles.css      Estilos (tema claro/oscuro automático)
-assets/js/catalog.js       Catálogo de controles, verificaciones y plantillas de hallazgo
-assets/js/mock-engine.js   Motor de análisis simulado (determinista) y parseo de repositorios
-assets/js/reporters.js     Generación de evidencia en Markdown / JSON / CSV / resumen ejecutivo
-assets/js/app.js           Lógica de la interfaz, filtros, historial y descargas
-docs/ARQUITECTURA.md       Modelo de datos y ruta para sustituir el mock por un análisis real
+assets/js/catalog.js       Catálogo de controles, verificaciones y plantillas
+assets/js/mock-engine.js   Motor simulado + composición de resultados (compartida)
+assets/js/real-engine.js   Motor real: cliente del API local
+assets/js/reporters.js     Evidencia en Markdown / JSON / CSV / resumen ejecutivo
+assets/js/app.js           Interfaz, filtros, historial y descargas
+server/server.js           Servidor local: estáticos + API de análisis
+server/recolector.js       Clonado y recolección de evidencia real
+server/zai.js              Cliente del API de Z.AI (GLM)
+server/analisis.js         Prompt, parseo y anclaje de hallazgos a la evidencia
+docs/ARQUITECTURA.md       Contrato de datos y detalle de cada capa
 ```
 
-## Catálogo de controles incluido
+## Catálogo de controles
 
 | Id | Control | Marco de referencia |
 | --- | --- | --- |
@@ -64,17 +137,11 @@ docs/ARQUITECTURA.md       Modelo de datos y ruta para sustituir el mock por un 
 | `CTRL-SEC-005` | Configuración insegura de infraestructura como código | CIS Benchmarks · NIST SP 800-53 CM-6 |
 | `CTRL-SEC-006` | Patrones inseguros en el código fuente (SAST) | OWASP Top 10 · CWE Top 25 |
 
-Añadir un control nuevo consiste únicamente en añadir un objeto al array `controles` de
-`assets/js/catalog.js`; la interfaz se construye a partir de él.
+Añadir un control consiste en añadir un objeto al array `controles` de `assets/js/catalog.js`: la
+interfaz, el plan de ejecución y el prompt enviado al modelo se construyen a partir de él.
 
-## Determinismo del mock
+## Determinismo del modo simulado
 
-Los hallazgos se derivan de un hash FNV-1a de `repositorio + control + verificaciones` que alimenta
-un PRNG `mulberry32`. La misma configuración produce siempre el mismo informe, lo que permite
-enseñar el prototipo y comparar capturas sin que los datos cambien entre ejecuciones.
-
-## Siguiente paso hacia un análisis real
-
-Ver [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md). En resumen: la interfaz solo depende de
-`CRO.engine.ejecutar(config, onProgreso)` y del contrato del objeto de resultado, de modo que
-sustituir el mock por una llamada a un servicio backend no requiere tocar la capa de presentación.
+Los hallazgos ficticios se derivan de un hash FNV-1a de `repositorio + control + verificaciones` que
+alimenta un PRNG `mulberry32`. La misma configuración produce siempre el mismo informe, lo que
+permite enseñar el prototipo sin que los datos cambien entre ejecuciones.

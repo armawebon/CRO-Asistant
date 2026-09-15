@@ -296,3 +296,61 @@ td.mono, th.mono { font-family: var(--mono); font-size: .78rem; }
   .disposicion { grid-template-columns: 1fr; }
   .tab-panel[hidden] { display: block !important; }
 }
+
+/* ======================================================================
+   Modo de ejecución (simulado / real) y resultados del análisis con modelo
+   ====================================================================== */
+
+.campo--modo { background: var(--fondo-sutil); }
+
+.opciones-modo { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+@media (max-width: 560px) { .opciones-modo { grid-template-columns: 1fr; } }
+
+.opcion-modo {
+  display: flex; gap: .5rem; align-items: flex-start;
+  padding: .55rem .6rem; border: 1px solid var(--borde); border-radius: 8px;
+  background: var(--fondo-panel); cursor: pointer;
+}
+.opcion-modo:has(input:checked) { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+.opcion-modo:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.opcion-modo input { margin-top: .25rem; }
+.opcion-modo strong { display: block; font-size: .88rem; }
+.opcion-modo .ayuda { margin: .15rem 0 0; font-size: .76rem; }
+
+.estado-backend {
+  margin: .7rem 0 0; padding: .45rem .6rem; border-radius: 6px;
+  background: var(--fondo-panel); border: 1px solid var(--borde);
+  font-size: .8rem; color: var(--texto-suave);
+}
+.estado-backend--ok { border-color: var(--conforme); }
+.estado-backend--ko { border-color: var(--alta); }
+
+.punto { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; margin-right: .3rem; }
+.punto--ok { background: var(--conforme); }
+.punto--ko { background: var(--alta); }
+
+.pastilla--real {
+  background: var(--conforme); border-color: var(--conforme); color: var(--fondo-panel);
+}
+
+.aviso--real { border-left-color: var(--conforme); background: var(--fondo-sutil); }
+.aviso--error { border-left-color: var(--critica); background: var(--fondo-sutil); }
+
+.celda-error { color: var(--critica); font-size: .8rem; }
+
+.analisis-modelo {
+  border: 1px solid var(--borde); border-radius: var(--radio);
+  padding: .6rem .75rem; margin-bottom: .6rem; background: var(--fondo-sutil);
+  font-size: .85rem;
+}
+.analisis-modelo__repo { margin: 0 0 .35rem; font-size: .78rem; color: var(--texto-suave); }
+.analisis-modelo p { margin: 0 0 .4rem; }
+.analisis-modelo details { margin-top: .35rem; }
+.analisis-modelo summary { cursor: pointer; color: var(--acento); font-size: .8rem; }
+.analisis-modelo ul { margin: .35rem 0 0; padding-left: 1.1rem; font-size: .8rem; }
+.analisis-modelo li { margin-bottom: .2rem; }
+
+.advertencia {
+  margin: .4rem 0 0; padding: .35rem .55rem; font-size: .8rem;
+  color: var(--critica); border: 1px dashed var(--critica); border-radius: 6px;
+}

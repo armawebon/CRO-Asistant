@@ -119,8 +119,14 @@
 
   /* --------------------------------------------------- lectura del formulario */
 
+  function modoSeleccionado() {
+    var marcado = document.querySelector('input[name="modo"]:checked');
+    return marcado ? marcado.value : 'mock';
+  }
+
   function leerConfiguracion() {
     return {
+      modo: modoSeleccionado(),
       repos: estado.reposParseados.validos,
       rama: $('#rama').value.trim() || 'main',
       profundidad: $('#profundidad').value,
@@ -141,10 +147,17 @@
     if (!config.objetivo) return 'Describe el objetivo del control.';
     if (config.prompt.length < 20) return 'El prompt de enfoque debe describir la prueba (mínimo 20 caracteres).';
     if (!config.camposEvidencia.length) return 'Selecciona al menos un campo de evidencia esperada.';
+    if (config.modo === 'real' && !CRO.engineReal.estado.modoRealDisponible) {
+      return 'El modo real no está disponible: ' +
+        (CRO.engineReal.estado.error || 'servidor local no accesible.') +
+        ' Cambia a modo simulado o arranca el servidor con la clave configurada.';
+    }
     return null;
   }
 
   function aplicarConfiguracion(config) {
+    var radioModo = document.querySelector('input[name="modo"][value="' + (config.modo || 'mock') + '"]');
+    if (radioModo && !radioModo.disabled) radioModo.checked = true;
     $('#repos').value = config.repos.map(function (r) { return r.entrada || r.etiqueta; }).join('\n');
     $('#rama').value = config.rama || 'main';
     $('#profundidad').value = config.profundidad || 'completa';
@@ -164,6 +177,83 @@
     actualizarContadorPrompt();
   }
 
+  /* --------------------------------------------------- estado del modo real */
+
+  function pintarEstadoBackend() {
+    var e = CRO.engineReal.estado;
+    var caja = $('#estado-backend');
+    var radioReal = document.querySelector('input[name="modo"][value="real"]');
+    var boton = $('#btn-comprobar-modelo');
+
+    if (!e.consultado) {
+      caja.textContent = 'Comprobando servidor local…';
+      caja.className = 'estado-backend';
+      return;
+    }
+
+    if (e.modoRealDisponible) {
+      caja.innerHTML = '<span class="punto punto--ok"></span> Servidor local activo · modelo <strong>' +
+        esc(e.modelo ? e.modelo.modelo : '?') + '</strong> · clave ' +
+        esc(e.modelo && e.modelo.claveHuella ? e.modelo.claveHuella : 'configurada') +
+        (e.clonadoActivo ? '' : ' · clonado desactivado');
+      caja.className = 'estado-backend estado-backend--ok';
+      radioReal.disabled = false;
+      boton.disabled = false;
+    } else {
+      caja.innerHTML = '<span class="punto punto--ko"></span> Modo real no disponible: ' + esc(e.error || 'causa desconocida');
+      caja.className = 'estado-backend estado-backend--ko';
+      radioReal.disabled = true;
+      boton.disabled = true;
+      var marcado = document.querySelector('input[name="modo"]:checked');
+      if (marcado && marcado.value === 'real') {
+        document.querySelector('input[name="modo"][value="mock"]').checked = true;
+      }
+    }
+    actualizarPastillaModo();
+  }
+
+  /** El texto del botón principal refleja el modo activo. */
+  function etiquetaBotonEjecutar() {
+    return modoSeleccionado() === 'real'
+      ? 'Ejecutar control (real)'
+      : 'Ejecutar control (simulado)';
+  }
+
+  function actualizarPastillaModo() {
+    if (!estado.ejecutando) $('#btn-ejecutar').textContent = etiquetaBotonEjecutar();
+    var pastilla = document.querySelector('.pastilla--mock');
+    if (!pastilla) return;
+    if (modoSeleccionado() === 'real') {
+      var e = CRO.engineReal.estado;
+      pastilla.textContent = 'MODO REAL · ' + (e.modelo ? e.modelo.modelo : 'GLM');
+      pastilla.classList.add('pastilla--real');
+    } else {
+      pastilla.textContent = 'MODO MOCK';
+      pastilla.classList.remove('pastilla--real');
+    }
+  }
+
+  function comprobarModelo() {
+    var boton = $('#btn-comprobar-modelo');
+    var caja = $('#estado-backend');
+    boton.disabled = true;
+    boton.textContent = 'Comprobando…';
+
+    CRO.engineReal.comprobarModelo().then(function (datos) {
+      caja.innerHTML = '<span class="punto punto--ok"></span> Conexión verificada con <strong>' +
+        esc(datos.modelo) + '</strong> · respuesta "' + esc(datos.respuesta) + '" en ' +
+        (datos.duracionMs / 1000).toFixed(1) + ' s';
+      caja.className = 'estado-backend estado-backend--ok';
+    }).catch(function (error) {
+      var detalle = error.detalle && error.detalle.cuerpo ? ' — ' + String(error.detalle.cuerpo).slice(0, 300) : '';
+      caja.innerHTML = '<span class="punto punto--ko"></span> ' + esc(error.message) + esc(detalle);
+      caja.className = 'estado-backend estado-backend--ko';
+    }).then(function () {
+      boton.disabled = false;
+      boton.textContent = 'Comprobar conexión con el modelo';
+    });
+  }
+
   /* ------------------------------------------------------------- ejecución */
 
   function mostrarProgreso(config) {
@@ -171,7 +261,9 @@
     $('#informe').hidden = true;
     $('#progreso').hidden = false;
     $('#barra-relleno').style.width = '0%';
-    $('#progreso-texto').textContent = 'Preparando análisis de ' + config.repos.length + ' repositorio(s)…';
+    $('#progreso-texto').textContent = config.modo === 'real'
+      ? 'Clonando y analizando ' + config.repos.length + ' repositorio(s) con el modelo…'
+      : 'Preparando análisis de ' + config.repos.length + ' repositorio(s)…';
     $('#progreso-lista').innerHTML = config.repos.map(function (r) {
       return '<li data-repo="' + esc(r.id) + '" data-etiqueta="' + esc(r.etiqueta) + '">· ' +
         esc(r.etiqueta) + ' — en cola</li>';
@@ -191,7 +283,8 @@
       items[indice].className = 'activo';
       items[indice].textContent = '▸ ' + repo.etiqueta + ' — analizando';
     }
-    $('#progreso-texto').textContent = 'Analizando ' + (indice + 1) + ' de ' + total + ': ' + repo.etiqueta;
+    $('#progreso-texto').textContent = (modoSeleccionado() === 'real'
+      ? 'Clonando y analizando ' : 'Analizando ') + (indice + 1) + ' de ' + total + ': ' + repo.etiqueta;
     $('#barra-relleno').style.width = Math.round((indice / total) * 100) + '%';
   }
 
@@ -212,10 +305,14 @@
 
     estado.ejecutando = true;
     $('#btn-ejecutar').disabled = true;
-    $('#btn-ejecutar').textContent = 'Ejecutando…';
+    $('#btn-ejecutar').textContent = config.modo === 'real' ? 'Clonando y analizando…' : 'Ejecutando…';
     mostrarProgreso(config);
 
-    motor.ejecutar(config, avanzarProgreso).then(function (ejecucion) {
+    var lanzador = config.modo === 'real'
+      ? CRO.engineReal.ejecutar(config, avanzarProgreso)
+      : motor.ejecutar(config, avanzarProgreso);
+
+    lanzador.then(function (ejecucion) {
       $('#barra-relleno').style.width = '100%';
       estado.ejecucion = ejecucion;
       guardarEnHistorial(ejecucion);
@@ -224,14 +321,14 @@
         renderizarInforme(ejecucion);
       }, 250);
     }).catch(function (err) {
-      cajaError.textContent = 'Error en la ejecución simulada: ' + err.message;
+      cajaError.textContent = 'Error en la ejecución (' + config.modo + '): ' + err.message;
       cajaError.hidden = false;
       $('#progreso').hidden = true;
       $('#estado-vacio').hidden = false;
     }).then(function () {
       estado.ejecutando = false;
       $('#btn-ejecutar').disabled = false;
-      $('#btn-ejecutar').textContent = 'Ejecutar control (simulado)';
+      $('#btn-ejecutar').textContent = etiquetaBotonEjecutar();
     });
   }
 
@@ -266,9 +363,32 @@
     var panel = $('.tab-panel[data-panel="resumen"]');
     var partes = [];
 
-    partes.push('<div class="aviso"><strong>Ejecución simulada.</strong> Identificador <code>' +
-      esc(ejecucion.id) + '</code> · ' + esc(new Date(ejecucion.fecha).toLocaleString('es-ES')) +
-      ' · duración ' + (ejecucion.resumen.duracionMs / 1000).toFixed(1) + ' s.</div>');
+    var observaciones = ejecucion.resultados.reduce(function (a, r) {
+      return a + ((r.observaciones && r.observaciones.length) || 0);
+    }, 0);
+
+    if (ejecucion.modo === 'real') {
+      partes.push('<div class="aviso aviso--real"><strong>Ejecución real.</strong> Identificador <code>' +
+        esc(ejecucion.id) + '</code> · ' + esc(new Date(ejecucion.fecha).toLocaleString('es-ES')) +
+        ' · modelo <strong>' + esc(ejecucion.modelo || 'GLM') + '</strong> · ' +
+        observaciones + ' observaciones recogidas de los repositorios · duración ' +
+        (ejecucion.resumen.duracionMs / 1000).toFixed(1) + ' s.</div>');
+    } else {
+      partes.push('<div class="aviso"><strong>Ejecución simulada.</strong> Identificador <code>' +
+        esc(ejecucion.id) + '</code> · ' + esc(new Date(ejecucion.fecha).toLocaleString('es-ES')) +
+        ' · duración ' + (ejecucion.resumen.duracionMs / 1000).toFixed(1) + ' s.</div>');
+    }
+
+    if (ejecucion.resumen.noVerificados) {
+      partes.push('<div class="aviso aviso--error"><strong>' + ejecucion.resumen.noVerificados +
+        ' hallazgo(s) sin evidencia verificable.</strong> El modelo los sustentó en observaciones que no existen ' +
+        'en la recolección. Están marcados en el detalle y no deben usarse como conclusión sin revisión.</div>');
+    }
+
+    if (ejecucion.resumen.errores) {
+      partes.push('<div class="aviso aviso--error"><strong>' + ejecucion.resumen.errores +
+        ' repositorio(s) no se pudieron analizar.</strong> El detalle aparece en la tabla.</div>');
+    }
 
     partes.push('<p><strong>' + esc(ejecucion.control.id) + '</strong> — ' + esc(ejecucion.control.nombre) +
       '<br><span class="ayuda">' + esc(ejecucion.control.marco) + '</span></p>');
@@ -277,6 +397,11 @@
       '<th>Repositorio</th><th>Veredicto</th><th>Crít.</th><th>Alta</th><th>Media</th><th>Baja</th>' +
       '<th>Puntuación</th><th>Ficheros</th><th>Commits</th></tr></thead><tbody>');
     ejecucion.resultados.forEach(function (res) {
+      if (res.error) {
+        partes.push('<tr><td class="mono">' + esc(res.repo.etiqueta) + '</td>' +
+          '<td colspan="8" class="celda-error">⚠ ' + esc(res.error) + '</td></tr>');
+        return;
+      }
       partes.push('<tr>' +
         '<td class="mono">' + esc(res.repo.etiqueta) + '</td>' +
         '<td><span class="veredicto veredicto--' + esc(res.veredicto) + '">' + esc(veredictoTexto(res.veredicto)) + '</span></td>' +
@@ -305,7 +430,44 @@
     });
     partes.push('</tbody></table></div>');
 
+    if (ejecucion.modo === 'real') {
+      partes.push(analisisModeloHtml(ejecucion));
+    }
+
     panel.innerHTML = partes.join('');
+  }
+
+  /** Valoración, descartes y limitaciones declaradas por el modelo. */
+  function analisisModeloHtml(ejecucion) {
+    var bloques = ['<h3 style="margin-top:1.4rem;font-size:.95rem">Valoración del modelo</h3>'];
+
+    ejecucion.resultados.forEach(function (res) {
+      if (!res.analisis) return;
+      bloques.push('<div class="analisis-modelo">');
+      bloques.push('<p class="analisis-modelo__repo mono">' + esc(res.repo.etiqueta) + '</p>');
+      if (res.analisis.valoracionGlobal) {
+        bloques.push('<p>' + esc(res.analisis.valoracionGlobal) + '</p>');
+      }
+      if (res.analisis.descartados && res.analisis.descartados.length) {
+        bloques.push('<details><summary>' + res.analisis.descartados.length +
+          ' observación(es) descartadas como falso positivo</summary><ul>');
+        res.analisis.descartados.forEach(function (d) {
+          bloques.push('<li><span class="mono">' + esc(d.observacion || '—') + '</span>: ' + esc(d.motivo || '') + '</li>');
+        });
+        bloques.push('</ul></details>');
+      }
+      if (res.analisis.limitaciones && res.analisis.limitaciones.length) {
+        bloques.push('<details><summary>Limitaciones declaradas (' + res.analisis.limitaciones.length + ')</summary><ul>');
+        res.analisis.limitaciones.forEach(function (l) { bloques.push('<li>' + esc(l) + '</li>'); });
+        bloques.push('</ul></details>');
+      }
+      if (res.metricas && res.metricas.tokens) {
+        bloques.push('<p class="ayuda">Tokens: ' + esc(JSON.stringify(res.metricas.tokens)) + '</p>');
+      }
+      bloques.push('</div>');
+    });
+
+    return bloques.join('');
   }
 
   function prepararFiltros(ejecucion) {
@@ -378,14 +540,22 @@
     var dl = ['<dl>'];
     dl.push('<dt>Verificación</dt><dd>' + esc(h.check) + ' — ' + esc(h.checkNombre) + '</dd>');
     if (si('ubicacion')) dl.push('<dt>Ubicación</dt><dd class="mono">' + esc(h.archivo) + ':' + h.linea + ' (' + esc(h.rama) + ')</dd>');
-    if (si('commit')) dl.push('<dt>Commit</dt><dd class="mono">' + esc(h.commit.slice(0, 12)) + ' · ' + esc(h.autor) + ' · ' + esc(h.fecha) + '</dd>');
+    if (si('commit') && h.commit) {
+      dl.push('<dt>Commit</dt><dd class="mono">' + esc(h.commit.slice(0, 12)) + ' · ' + esc(h.autor) + ' · ' + esc(h.fecha) +
+        (h.commitRelacion ? '<br><span class="ayuda">' + esc(h.commitRelacion) + '</span>' : '') + '</dd>');
+    }
     if (si('cvss')) dl.push('<dt>CVSS estimado</dt><dd>' + esc(h.cvss) + '</dd>');
     if (si('impacto')) dl.push('<dt>Impacto</dt><dd>' + esc(h.impacto) + '</dd>');
     if (si('recomendacion')) dl.push('<dt>Recomendación</dt><dd>' + esc(h.recomendacion) + '</dd>');
     if (si('referencia')) dl.push('<dt>Referencia</dt><dd>' + esc(h.referencia) + '</dd>');
     if (si('trazabilidad')) dl.push('<dt>Trazabilidad</dt><dd class="mono">' + esc(estado.ejecucion.id + '/' + h.id) + '</dd>');
     dl.push('<dt>Confianza</dt><dd>' + esc(h.confianza) + '</dd>');
+    if (h.origen) dl.push('<dt>Origen</dt><dd>' + esc(h.origen) + '</dd>');
+    if (h.justificacion) dl.push('<dt>Justificación</dt><dd>' + esc(h.justificacion) + '</dd>');
     dl.push('</dl>');
+    if (h.advertencia) {
+      dl.push('<p class="advertencia">⚠ ' + esc(h.advertencia) + '</p>');
+    }
 
     var snippet = si('snippet') ? '<pre>' + esc(h.snippet) + '</pre>' : '';
     return '<div class="detalle-hallazgo">' + dl.join('') + snippet + '</div>';
@@ -492,6 +662,10 @@
 
   function enlazarEventos() {
     $('#control').addEventListener('change', function () { pintarControlSeleccionado(true); });
+    $$('input[name="modo"]').forEach(function (radio) {
+      radio.addEventListener('change', actualizarPastillaModo);
+    });
+    $('#btn-comprobar-modelo').addEventListener('click', comprobarModelo);
     $('#repos').addEventListener('input', actualizarRepos);
     $('#prompt').addEventListener('input', actualizarContadorPrompt);
     $('#formulario').addEventListener('submit', ejecutar);
@@ -599,6 +773,8 @@
     if (!cargarBorrador()) actualizarRepos();
     enlazarEventos();
     pintarHistorial();
+    pintarEstadoBackend();
+    CRO.engineReal.consultarEstado().then(pintarEstadoBackend);
   }
 
   if (document.readyState === 'loading') {

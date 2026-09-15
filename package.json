@@ -1,0 +1,14 @@
+{
+  "name": "cro-asistant",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Ejecución de controles de ciberseguridad sobre repositorios Git, con modo simulado y modo real (recolección de evidencia + análisis con GLM de Z.AI).",
+  "scripts": {
+    "start": "node server/server.js",
+    "comprobar": "node --check server/server.js && node --check server/zai.js && node --check server/analisis.js && node --check server/recolector.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

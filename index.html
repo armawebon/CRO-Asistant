@@ -31,6 +31,31 @@
       <h2 id="titulo-config" class="panel__titulo">1 · Definición del control</h2>
 
       <form id="formulario" novalidate>
+        <!-- Modo de ejecución -->
+        <fieldset class="campo campo--modo">
+          <legend>Modo de ejecución</legend>
+          <div class="opciones-modo">
+            <label class="opcion-modo">
+              <input type="radio" name="modo" value="mock" checked>
+              <span>
+                <strong>Simulado</strong>
+                <span class="ayuda">Hallazgos ficticios deterministas. No accede a los repositorios.</span>
+              </span>
+            </label>
+            <label class="opcion-modo">
+              <input type="radio" name="modo" value="real">
+              <span>
+                <strong>Real</strong>
+                <span class="ayuda">Clona cada repositorio, recoge evidencia y la analiza con GLM (Z.AI).</span>
+              </span>
+            </label>
+          </div>
+          <p class="estado-backend" id="estado-backend" aria-live="polite">Comprobando servidor local…</p>
+          <div class="fila-acciones">
+            <button type="button" class="boton boton--fantasma" id="btn-comprobar-modelo">Comprobar conexión con el modelo</button>
+          </div>
+        </fieldset>
+
         <!-- Repositorios -->
         <fieldset class="campo">
           <legend>Repositorios Git a evaluar</legend>
@@ -200,11 +225,13 @@
   </aside>
 
   <footer class="pie">
-    <p>CRO-Asistant · prototipo <strong>mock</strong>: no clona repositorios, no realiza peticiones de red y no ejecuta análisis reales.</p>
+    <p>CRO-Asistant · <strong>modo simulado</strong>: no clona repositorios ni realiza peticiones de red.
+      <strong>Modo real</strong>: clona cada repositorio, recoge evidencia localmente y la analiza con el modelo GLM de Z.AI a través del servidor local.</p>
   </footer>
 
   <script src="assets/js/catalog.js"></script>
   <script src="assets/js/mock-engine.js"></script>
+  <script src="assets/js/real-engine.js"></script>
   <script src="assets/js/reporters.js"></script>
   <script src="assets/js/app.js"></script>
 </body>

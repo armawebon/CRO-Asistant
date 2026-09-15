@@ -199,6 +199,84 @@
     return conteo;
   }
 
+  /* ------------------------------------------------- composición de resultados */
+
+  /**
+   * Construye el bloque de resultado de un repositorio a partir de sus hallazgos.
+   * Lo usan tanto el motor simulado como el motor real, de modo que la
+   * puntuación y el veredicto se calculan siempre igual.
+   */
+  function componerResultadoRepo(datos) {
+    var hallazgos = datos.hallazgos || [];
+    var control = datos.control || { checks: [] };
+
+    var checks = (datos.checksActivos || []).map(function (idCheck) {
+      var propios = hallazgos.filter(function (h) { return h.check === idCheck; });
+      var def = control.checks.filter(function (c) { return c.id === idCheck; })[0] || { nombre: idCheck };
+      return {
+        id: idCheck,
+        nombre: def.nombre,
+        hallazgos: propios.length,
+        estado: propios.length ? veredicto(propios) : 'conforme'
+      };
+    });
+
+    var bloque = {
+      repo: datos.repo,
+      hallazgos: hallazgos,
+      checks: checks,
+      conteo: contarPorSeveridad(hallazgos),
+      puntuacion: puntuar(hallazgos),
+      veredicto: veredicto(hallazgos),
+      metricas: datos.metricas || {}
+    };
+
+    if (datos.error) bloque.error = datos.error;
+    if (datos.observaciones) bloque.observaciones = datos.observaciones;
+    if (datos.analisis) bloque.analisis = datos.analisis;
+    return bloque;
+  }
+
+  /** Construye el objeto de ejecución completo a partir de los bloques por repositorio. */
+  function componerEjecucion(datos) {
+    var resultados = datos.resultados || [];
+    var control = datos.control;
+    var todos = resultados.reduce(function (acc, r) { return acc.concat(r.hallazgos); }, []);
+    var modo = datos.modo || 'mock';
+
+    return {
+      id: 'EJ-' + new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14),
+      fecha: new Date().toISOString(),
+      modo: modo,
+      simulado: modo === 'mock',
+      modelo: datos.modelo || null,
+      config: datos.config,
+      control: {
+        id: control.id,
+        nombre: control.nombre,
+        marco: control.marco,
+        descripcion: control.descripcion
+      },
+      checks: datos.checksActivos,
+      plan: construirPlan(datos.config, control, datos.checksActivos),
+      resultados: resultados,
+      resumen: {
+        repos: resultados.length,
+        hallazgos: todos.length,
+        conteo: contarPorSeveridad(todos),
+        conformes: resultados.filter(function (r) { return r.veredicto === 'conforme'; }).length,
+        parciales: resultados.filter(function (r) { return r.veredicto === 'parcial'; }).length,
+        noConformes: resultados.filter(function (r) { return r.veredicto === 'no-conforme'; }).length,
+        errores: resultados.filter(function (r) { return !!r.error; }).length,
+        noVerificados: todos.filter(function (h) { return h.verificado === false; }).length,
+        puntuacionMedia: resultados.length
+          ? Math.round(resultados.reduce(function (a, r) { return a + r.puntuacion; }, 0) / resultados.length)
+          : 0,
+        duracionMs: Date.now() - datos.inicio
+      }
+    };
+  }
+
   /* -------------------------------------------------------- plan de ejecución */
 
   function construirPlan(config, control, checksActivos) {
@@ -261,31 +339,18 @@
     var azar = rng(semilla);
     var hallazgos = generarHallazgos(repo, control, checksActivos, azar, config);
 
-    var checksResultado = checksActivos.map(function (idCheck) {
-      var propios = hallazgos.filter(function (h) { return h.check === idCheck; });
-      var def = control.checks.filter(function (c) { return c.id === idCheck; })[0] || { nombre: idCheck };
-      return {
-        id: idCheck,
-        nombre: def.nombre,
-        hallazgos: propios.length,
-        estado: propios.length ? veredicto(propios) : 'conforme'
-      };
-    });
-
-    return {
+    return componerResultadoRepo({
       repo: repo,
       hallazgos: hallazgos,
-      checks: checksResultado,
-      conteo: contarPorSeveridad(hallazgos),
-      puntuacion: puntuar(hallazgos),
-      veredicto: veredicto(hallazgos),
+      checksActivos: checksActivos,
+      control: control,
       metricas: {
         ficherosAnalizados: entero(azar, 180, 4200),
         commitsRevisados: config.profundidad === 'superficial' ? 1 : entero(azar, 240, 9800),
         duracionMs: entero(azar, 1800, 9400),
         ultimoCommit: fechaAtras(azar, 60)
       }
-    };
+    });
   }
 
   /**
@@ -308,34 +373,14 @@
       var i = 0;
       function paso() {
         if (i >= repos.length) {
-          var todos = resultados.reduce(function (acc, r) { return acc.concat(r.hallazgos); }, []);
-          resolve({
-            id: 'EJ-' + new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14),
-            fecha: new Date().toISOString(),
-            simulado: true,
+          resolve(componerEjecucion({
             config: config,
-            control: {
-              id: control.id,
-              nombre: control.nombre,
-              marco: control.marco,
-              descripcion: control.descripcion
-            },
-            checks: checksActivos,
-            plan: construirPlan(config, control, checksActivos),
+            control: control,
+            checksActivos: checksActivos,
             resultados: resultados,
-            resumen: {
-              repos: repos.length,
-              hallazgos: todos.length,
-              conteo: contarPorSeveridad(todos),
-              conformes: resultados.filter(function (r) { return r.veredicto === 'conforme'; }).length,
-              parciales: resultados.filter(function (r) { return r.veredicto === 'parcial'; }).length,
-              noConformes: resultados.filter(function (r) { return r.veredicto === 'no-conforme'; }).length,
-              puntuacionMedia: resultados.length
-                ? Math.round(resultados.reduce(function (a, r) { return a + r.puntuacion; }, 0) / resultados.length)
-                : 0,
-              duracionMs: Date.now() - inicio
-            }
-          });
+            inicio: inicio,
+            modo: 'mock'
+          }));
           return;
         }
         var repo = repos[i];
@@ -352,6 +397,9 @@
     parsearRepos: parsearRepos,
     normalizarRepo: normalizarRepo,
     construirPlan: construirPlan,
+    componerResultadoRepo: componerResultadoRepo,
+    componerEjecucion: componerEjecucion,
+    utilidades: { puntuar: puntuar, veredicto: veredicto, contarPorSeveridad: contarPorSeveridad },
     ejecutar: ejecutar
   };
 })(window);
