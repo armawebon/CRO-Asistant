@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRO-Asistant · Control de ciberseguridad sobre repositorios Git</title>
+  <meta name="description" content="Aplicación mock para definir y ejecutar controles de ciberseguridad sobre listados de repositorios Git.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128737;</text></svg>">
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+  <a class="salto-contenido" href="#configuracion">Saltar al contenido</a>
+
+  <header class="cabecera">
+    <div class="cabecera__marca">
+      <span class="cabecera__icono" aria-hidden="true">🛡️</span>
+      <div>
+        <h1>CRO-Asistant</h1>
+        <p>Ejecución de controles de ciberseguridad sobre repositorios Git</p>
+      </div>
+    </div>
+    <div class="cabecera__estado">
+      <span class="pastilla pastilla--mock" title="Los resultados son simulados">MODO MOCK</span>
+      <button type="button" class="boton boton--fantasma" id="btn-historial" aria-expanded="false">Historial</button>
+    </div>
+  </header>
+
+  <main class="disposicion">
+    <!-- ============================ CONFIGURACIÓN ============================ -->
+    <section class="panel" id="configuracion" aria-labelledby="titulo-config">
+      <h2 id="titulo-config" class="panel__titulo">1 · Definición del control</h2>
+
+      <form id="formulario" novalidate>
+        <!-- Repositorios -->
+        <fieldset class="campo">
+          <legend>Repositorios Git a evaluar</legend>
+          <p class="ayuda">Uno por línea. Se admiten <code>https://host/org/repo.git</code>,
+            <code>git@host:org/repo.git</code> y <code>org/repo</code>. Las líneas que empiezan por <code>#</code> se ignoran.</p>
+          <textarea id="repos" name="repos" rows="6" spellcheck="false"
+            placeholder="https://github.com/mi-org/servicio-pagos.git&#10;git@github.com:mi-org/portal-web.git&#10;mi-org/infra-terraform"></textarea>
+          <div class="fila-acciones">
+            <button type="button" class="boton boton--fantasma" id="btn-ejemplo">Cargar ejemplo</button>
+            <button type="button" class="boton boton--fantasma" id="btn-limpiar-repos">Vaciar</button>
+            <span class="contador" id="contador-repos">0 repositorios válidos</span>
+          </div>
+          <ul class="lista-repos" id="lista-repos" aria-live="polite"></ul>
+        </fieldset>
+
+        <!-- Alcance -->
+        <fieldset class="campo campo--doble">
+          <legend>Alcance del análisis</legend>
+          <label class="subcampo">
+            <span>Rama</span>
+            <input type="text" id="rama" value="main" spellcheck="false">
+          </label>
+          <label class="subcampo">
+            <span>Profundidad de histórico</span>
+            <select id="profundidad">
+              <option value="completa">Histórico completo</option>
+              <option value="superficial">Solo estado actual (HEAD)</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <!-- Control -->
+        <fieldset class="campo">
+          <legend>Objetivo del control</legend>
+          <label class="subcampo">
+            <span>Control del catálogo</span>
+            <select id="control"></select>
+          </label>
+          <p class="ayuda" id="control-descripcion"></p>
+          <label class="subcampo">
+            <span>Objetivo concreto de esta ejecución</span>
+            <textarea id="objetivo" rows="3"
+              placeholder="Qué se quiere demostrar o descartar con este control."></textarea>
+          </label>
+          <div class="checks" id="checks" role="group" aria-label="Verificaciones a ejecutar"></div>
+        </fieldset>
+
+        <!-- Prompt -->
+        <fieldset class="campo">
+          <legend>Prompt de enfoque de la prueba</legend>
+          <p class="ayuda">Instrucciones que recibirá el analista (o el motor de análisis) sobre cómo abordar la prueba.</p>
+          <textarea id="prompt" rows="8" spellcheck="false"
+            placeholder="Describe el enfoque: qué buscar, cómo priorizar, qué descartar y cómo documentar."></textarea>
+          <div class="fila-acciones">
+            <button type="button" class="boton boton--fantasma" id="btn-prompt-sugerido">Usar prompt sugerido del control</button>
+            <span class="contador" id="contador-prompt">0 caracteres</span>
+          </div>
+        </fieldset>
+
+        <!-- Evidencia -->
+        <fieldset class="campo">
+          <legend>Evidencia esperada</legend>
+          <label class="subcampo">
+            <span>Formato de entrega</span>
+            <select id="formato-evidencia"></select>
+          </label>
+          <div class="checks" id="campos-evidencia" role="group" aria-label="Campos de evidencia requeridos"></div>
+          <label class="subcampo">
+            <span>Criterio de aceptación</span>
+            <textarea id="criterio" rows="2"
+              placeholder="Ej.: el control se considera superado si no existen hallazgos críticos ni altos abiertos."></textarea>
+          </label>
+        </fieldset>
+
+        <div class="fila-acciones fila-acciones--principal">
+          <button type="submit" class="boton boton--primario" id="btn-ejecutar">Ejecutar control (simulado)</button>
+          <button type="button" class="boton boton--fantasma" id="btn-reiniciar">Reiniciar formulario</button>
+        </div>
+        <p class="mensaje-error" id="error-formulario" role="alert" hidden></p>
+      </form>
+    </section>
+
+    <!-- ============================== RESULTADOS ============================== -->
+    <section class="panel" id="resultados" aria-labelledby="titulo-resultados">
+      <h2 id="titulo-resultados" class="panel__titulo">2 · Resultado de la ejecución</h2>
+
+      <!-- Estado vacío -->
+      <div class="vacio" id="estado-vacio">
+        <p class="vacio__icono" aria-hidden="true">📋</p>
+        <p>Define el control a la izquierda y pulsa <strong>Ejecutar control</strong>.</p>
+        <p class="ayuda">Todos los resultados se generan localmente y son ficticios.</p>
+      </div>
+
+      <!-- Progreso -->
+      <div class="progreso" id="progreso" hidden aria-live="polite">
+        <p id="progreso-texto">Preparando análisis…</p>
+        <div class="barra"><div class="barra__relleno" id="barra-relleno"></div></div>
+        <ol class="progreso__lista" id="progreso-lista"></ol>
+      </div>
+
+      <!-- Informe -->
+      <div id="informe" hidden>
+        <div class="kpis" id="kpis"></div>
+
+        <div class="pestanas" role="tablist" aria-label="Secciones del informe">
+          <button type="button" class="pestana" role="tab" data-tab="resumen" aria-selected="true">Resumen</button>
+          <button type="button" class="pestana" role="tab" data-tab="hallazgos" aria-selected="false">Hallazgos</button>
+          <button type="button" class="pestana" role="tab" data-tab="evidencia" aria-selected="false">Evidencia</button>
+          <button type="button" class="pestana" role="tab" data-tab="plan" aria-selected="false">Plan y prompt</button>
+        </div>
+
+        <div class="tab-panel" data-panel="resumen"></div>
+
+        <div class="tab-panel" data-panel="hallazgos" hidden>
+          <div class="filtros">
+            <label class="subcampo subcampo--inline">
+              <span>Severidad</span>
+              <select id="filtro-severidad">
+                <option value="">Todas</option>
+                <option value="critica">Crítica</option>
+                <option value="alta">Alta</option>
+                <option value="media">Media</option>
+                <option value="baja">Baja</option>
+                <option value="info">Informativa</option>
+              </select>
+            </label>
+            <label class="subcampo subcampo--inline">
+              <span>Repositorio</span>
+              <select id="filtro-repo"><option value="">Todos</option></select>
+            </label>
+            <label class="subcampo subcampo--inline subcampo--crecer">
+              <span>Buscar</span>
+              <input type="search" id="filtro-texto" placeholder="título, fichero, verificación…">
+            </label>
+          </div>
+          <div id="tabla-hallazgos"></div>
+        </div>
+
+        <div class="tab-panel" data-panel="evidencia" hidden>
+          <div class="fila-acciones">
+            <label class="subcampo subcampo--inline">
+              <span>Vista</span>
+              <select id="vista-evidencia"></select>
+            </label>
+            <button type="button" class="boton boton--fantasma" id="btn-copiar">Copiar</button>
+            <button type="button" class="boton boton--fantasma" id="btn-descargar">Descargar</button>
+          </div>
+          <pre class="salida" id="salida-evidencia"></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="plan" hidden>
+          <pre class="salida" id="salida-plan"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================================ HISTORIAL ================================ -->
+  <aside class="cajon" id="cajon-historial" hidden aria-label="Historial de ejecuciones">
+    <div class="cajon__cabecera">
+      <h2>Historial de ejecuciones</h2>
+      <button type="button" class="boton boton--fantasma" id="btn-cerrar-historial" aria-label="Cerrar historial">✕</button>
+    </div>
+    <p class="ayuda">Se guarda en el navegador (localStorage). Máximo 20 ejecuciones.</p>
+    <ul class="historial" id="lista-historial"></ul>
+    <button type="button" class="boton boton--fantasma" id="btn-vaciar-historial">Vaciar historial</button>
+  </aside>
+
+  <footer class="pie">
+    <p>CRO-Asistant · prototipo <strong>mock</strong>: no clona repositorios, no realiza peticiones de red y no ejecuta análisis reales.</p>
+  </footer>
+
+  <script src="assets/js/catalog.js"></script>
+  <script src="assets/js/mock-engine.js"></script>
+  <script src="assets/js/reporters.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Dependencias / artefactos (la app no usa build, pero evita ruido si se añade tooling)
+node_modules/
+dist/
+*.log
